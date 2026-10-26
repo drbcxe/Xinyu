@@ -1,6 +1,8 @@
 # 数据库升级与归档
 
-当前迁移版本为 `a04d5fc6e834`。执行 `uv run alembic upgrade head` 后，默认 `public` schema 仅保留心语业务表与 Alembic 版本记录。新增会话公开 ID、设备信息及账号安全事件表，保留原账号和有效会话。
+当前迁移版本为 `b15e60d7f945`。执行 `uv run alembic upgrade head` 后，默认 `public` schema 仅保留心语业务表与 Alembic 版本记录。账号升级增加会话公开 ID、设备信息及账号安全事件，RAG 升级增加索引 outbox，保留原账号和业务记录。
+
+新增 `xinyu_graph` schema 保存心语的 LangGraph 检查点；运行 `uv run python -m scripts.prepare_ai` 初始化框架自身表结构。该 schema 与退役的科研归档完全隔离，需纳入当前应用备份。Qdrant 使用独立 `xinyu_vectors` 卷，向量可以从原文重建，详见 [RAG与LangGraph](./rag-langgraph.md)。
 
 退役模块已经从应用代码、页面、工具和依赖中移除。原有九张业务表移动到独立的 `research_archive` schema，原状态库移动到 `research_checkpoints_archive`。
 

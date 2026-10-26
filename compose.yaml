@@ -32,6 +32,16 @@ services:
       timeout: 3s
       retries: 12
 
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - xinyu_vectors:/qdrant/storage
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+
 volumes:
   postgres_data:
   auth_redis_data:
+  xinyu_vectors:

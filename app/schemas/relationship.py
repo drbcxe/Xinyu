@@ -40,6 +40,7 @@ class Advice(BaseModel):
     replies: list[str] = Field(default_factory=list, max_length=3)
     candidates: list[Candidate] = Field(default_factory=list, max_length=6)
     date_plans: list[DateOption] = Field(default_factory=list, max_length=3)
+    source_ids: list[str] = Field(default_factory=list, max_length=16)
 
 
 class ItemInput(BaseModel):

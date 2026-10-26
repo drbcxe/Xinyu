@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     model_timeout_seconds: int = 60
     model_max_tokens: int = 4096
     agent_timeout_seconds: int = 300
+    qdrant_url: str = "http://127.0.0.1:6333"
+    rag_embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    rag_model_cache: str = "D:/DevTools/embedding-models"
+    rag_rerank_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

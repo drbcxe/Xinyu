@@ -121,3 +121,18 @@ class RelationshipWeixinBinding(Base):
     cursor: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(30), default="connected")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipRagIndex(Base):
+    """Durable index outbox, including tombstones for deleted sources."""
+
+    __tablename__ = "relationship_rag_indexes"
+    item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    signature: Mapped[str] = mapped_column(String(64), default="")
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(String(300), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

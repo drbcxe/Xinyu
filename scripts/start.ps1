@@ -14,13 +14,19 @@ if (Test-Path -LiteralPath (Join-Path $runtimeDir 'processes.json')) {
     & (Join-Path $PSScriptRoot 'stop.ps1')
 }
 $env:PYTHONUTF8 = '1'
+$tempDir = Join-Path $runtimeDir 'tmp'
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+$env:TEMP = $tempDir
+$env:TMP = $tempDir
 $env:Path = "D:\DevTools\nodejs;D:\DevTools\npm-global;D:\DevTools\pnpm\bin;$env:Path"
 Push-Location $projectDir
 try {
-    & 'D:\docker_desktop\resources\bin\docker.exe' compose up -d --wait postgres redis
+    & 'D:\docker_desktop\resources\bin\docker.exe' compose up -d --wait postgres redis qdrant
     if ($LASTEXITCODE -ne 0) { throw 'Docker dependencies did not become healthy' }
     & $pythonExe -m alembic upgrade head
     if ($LASTEXITCODE -ne 0) { throw 'Database migration failed' }
+    & $pythonExe -m scripts.prepare_ai
+    if ($LASTEXITCODE -ne 0) { throw 'AI infrastructure did not become ready' }
     $records = @()
     $specs = @(
         @{Role='api'; Exe=$pythonExe; Arguments=@('-u','-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8000'); Dir=$projectDir},

@@ -124,7 +124,11 @@ def process_one() -> bool:
             )
             if not turn:
                 result = run_agent(
-                    db, owner, payload["content"], payload.get("mode", "chat")
+                    db,
+                    owner,
+                    payload["content"],
+                    payload.get("mode", "chat"),
+                    request_id=request_id,
                 )
                 turn = RelationshipTurn(
                     id=str(uuid4()),

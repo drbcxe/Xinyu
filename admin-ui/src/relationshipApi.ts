@@ -1,7 +1,10 @@
 export type Candidate = { kind: 'memory' | 'reminder'; title: string; quote: string }
 export type Plan = { title: string; budget: string; schedule: string[]; reason: string; needs_confirmation: string[] }
 export type Trace = { tool: string; status: string; milliseconds: number; result: unknown }
-export type Advice = { transcript?: string; analysis: string; uncertainty: string; replies: string[]; candidates: Candidate[]; date_plans?: Plan[]; tool_trace?: Trace[] }
+export type RagSource = { citation_id: string; source_id: string; revision: number; kind: 'memory' | 'chat_log'; title: string; offset: number; end_offset: number; quote: string; retrievers: string[]; vector_score?: number; bm25_score?: number; rrf_score?: number }
+export type Retrieval = { sources: RagSource[]; mode: string; warnings: string[]; milliseconds: number; reranked?: boolean }
+export type GraphStep = { node: string; milliseconds: number; mode?: string; sources?: number; valid?: boolean }
+export type Advice = { transcript?: string; analysis: string; uncertainty: string; replies: string[]; candidates: Candidate[]; date_plans?: Plan[]; tool_trace?: Trace[]; sources?: RagSource[]; retrieved_sources?: RagSource[]; graph_trace?: GraphStep[]; retrieval_trace?: Retrieval[]; execution?: { engine: string; checkpointed: boolean; resumed: boolean; model_steps: number; tool_calls: number; usage: Record<string, number> } }
 export type Turn = { id: string; content: string; result: Advice; created_at: string }
 export type Item = { id: string; kind: 'memory' | 'reminder' | 'date_plan' | 'chat_log'; title: string; quote: string; source_turn_id: string | null; due_at: string | null; status: 'active' | 'completed' | 'cancelled'; revision: number; details: Partial<Plan> & { text?: string } }
 export type Job = { id: string; status: 'queued' | 'running' | 'succeeded' | 'failed'; error: string; turn_id: string | null; created_at: string }

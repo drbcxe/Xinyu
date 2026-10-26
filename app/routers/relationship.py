@@ -20,6 +20,7 @@ from app.models.relationship import (
     RelationshipJob,
     RelationshipNotice,
     RelationshipProfile,
+    RelationshipRagIndex,
     RelationshipTurn,
     RelationshipWeixinBinding,
 )
@@ -31,8 +32,10 @@ from app.schemas.relationship import (
     ItemUpdate,
     ProfileInput,
 )
+from app.services.graph_checkpoints import clear_checkpoints
 from app.services.relationship_auth import Owner
 from app.services.relationship_jobs import enqueue, get_profile, job_data
+from app.services.relationship_rag import index_status, retrieve, schedule_index
 from app.services.relationship_vision import transcribe
 
 router = APIRouter(prefix="/relationship", tags=["relationship"])
@@ -263,6 +266,7 @@ def create_item(payload: ItemInput, db: DB, owner: Owner):
         details=details,
     )
     db.add(item)
+    schedule_index(db, item)
     db.commit()
     return item_data(item)
 
@@ -291,6 +295,7 @@ def update_item(item_id: UUID, payload: ItemUpdate, db: DB, owner: Owner):
     item.title, item.status = payload.title.strip(), payload.status
     item.due_at = payload.due_at if item.kind == "reminder" else None
     item.revision += 1
+    schedule_index(db, item)
     db.commit()
     return item_data(item)
 
@@ -305,6 +310,7 @@ def delete_item(item_id: UUID, db: DB, owner: Owner):
     if not item:
         raise AppError(404, "ITEM_NOT_FOUND", "事项不存在")
     invalidate_notices(db, item.id)
+    schedule_index(db, item, deleted=True)
     db.delete(item)
     db.commit()
     return {"ok": True}
@@ -363,6 +369,7 @@ async def import_chat(db: DB, owner: Owner, file: Annotated[UploadFile, File()])
         details={"text": text},
     )
     db.add(item)
+    schedule_index(db, item)
     db.commit()
     return {"id": item.id, "title": item.title, "characters": len(text)}
 
@@ -370,6 +377,11 @@ async def import_chat(db: DB, owner: Owner, file: Annotated[UploadFile, File()])
 @router.delete("/history")
 def clear_history(db: DB, owner: Owner):
     lock_owner(db, owner)
+    for item in db.scalars(
+        select(RelationshipItem).where(RelationshipItem.owner == owner)
+    ):
+        schedule_index(db, item, deleted=True)
+    clear_checkpoints(owner)
     for model in (
         RelationshipJob,
         RelationshipNotice,
@@ -378,6 +390,61 @@ def clear_history(db: DB, owner: Owner):
     ):
         for row in db.scalars(select(model).where(model.owner == owner)).all():
             db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+class RetrievalInput(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+
+
+@router.get("/knowledge")
+def knowledge(db: DB, owner: Owner):
+    return index_status(db, owner)
+
+
+@router.post("/knowledge/search")
+def knowledge_search(payload: RetrievalInput, db: DB, owner: Owner):
+    # Retrieval preview stays local and does not consume a generation-model call.
+    return retrieve(db, owner, payload.query, top_k=8, rerank=False)
+
+
+@router.post("/knowledge/reindex")
+def knowledge_reindex(db: DB, owner: Owner):
+    lock_owner(db, owner)
+    count = 0
+    for item in db.scalars(
+        select(RelationshipItem).where(
+            RelationshipItem.owner == owner,
+            RelationshipItem.kind.in_(["memory", "chat_log"]),
+            RelationshipItem.status == "active",
+        )
+    ):
+        schedule_index(db, item)
+        count += 1
+    db.commit()
+    return {"queued": count}
+
+
+@router.post("/knowledge/{item_id}/retry")
+def retry_index(item_id: UUID, db: DB, owner: Owner):
+    job = db.scalar(
+        select(RelationshipRagIndex)
+        .where(
+            RelationshipRagIndex.item_id == str(item_id),
+            RelationshipRagIndex.owner == owner,
+        )
+        .with_for_update()
+    )
+    if not job:
+        raise AppError(404, "INDEX_NOT_FOUND", "索引任务不存在")
+    if job.status == "indexing":
+        raise AppError(409, "INDEX_BUSY", "资料正在建立索引，请稍后查看")
+    item = db.get(RelationshipItem, str(item_id))
+    if not item:
+        job.status, job.error, job.attempts = "deleting", "", 0
+    else:
+        schedule_index(db, item)
     db.commit()
     return {"ok": True}
 
