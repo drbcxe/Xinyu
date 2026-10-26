@@ -16,7 +16,7 @@
 | 提醒 | 独立Worker到期生成持久收件箱记录；同事项同版本不重复；取消/改期使旧未读提醒失效 |
 | 系统通知 | 用户开启权限后，打开页面时显示；没有实现关闭浏览器后的Web Push |
 | 约会规划 | 收集区域、预算、日期、限制，读取已确认偏好；生成参考方案，可保存并添加准备提醒 |
-| 账号 | 用户名和scrypt密码哈希；随机HttpOnly/SameSite会话，服务器只存会话摘要；注册保留访客数据，登录打开已有空间 |
+| 账号 | 用户名和scrypt密码哈希；随机HttpOnly/SameSite会话，服务器只存会话摘要；Redis一次性验证码、失败锁定、会话缓存与撤销；设备管理、修改密码和安全事件；注册保留访客数据，登录打开已有空间 |
 | 跨设备 | 连接同一后端并登录同一账号；当前服务器默认仅本机监听，并非已发布的公网服务 |
 | 聊天导入 | 用户主动上传UTF-8 TXT/JSON（最大1MB）；工具按原文片段检索，支持删除 |
 | 数据管理 | 导出本空间数据；清空对话、事项、提醒、任务和导入记录，保留账号及表达设置 |
@@ -29,6 +29,7 @@
 ```mermaid
 flowchart LR
     UI[React 网页] --> API[FastAPI / 账号空间隔离]
+    API --> R[Redis 验证码 / 限流 / 会话]
     API --> Q[PostgreSQL 任务队列]
     Q --> W[独立 Worker]
     W --> A[有预算的 Agent 工具循环]
@@ -46,7 +47,7 @@ flowchart LR
 
 - `app/services/relationship_agent.py`：偏好、事项、聊天检索、候选、约会工具；最终结构化输出。
 - `app/services/relationship_jobs.py`、`scripts/worker.py`：任务租期恢复、执行、到期提醒。
-- `app/services/relationship_auth.py`：注册、登录、会话、尝试频率限制。
+- `app/services/relationship_auth.py`、`auth_cache.py`：注册、登录、Redis验证码/限流、会话与安全事件。详见[账号验证与Redis](./account-security.md)。
 - `app/services/relationship_vision.py`：转录与图片大小/格式校验。
 - `app/services/relationship_weixin.py`：微信协议、授权、文本收发及提醒投递准备。
 - `app/routers/relationship.py`：账号范围内的API。
@@ -66,7 +67,7 @@ RELATIONSHIP_VISION_API_KEY=
 
 Windows：`scripts/start.ps1` 启动本机数据库依赖、API、Worker和前端；`scripts/stop.ps1` 只停止匹配进程记录的应用及子进程，不删除数据。日志位于忽略目录 `.runtime/logs`。运行时和依赖缓存在D盘。
 
-迁移版本：`f93c4eb5d723`。默认schema只保留心语业务，数据升级兼容说明见 [数据库升级与归档](./database-upgrades.md)。`.runtime` 包含私有附件、进程日志和可选微信加密密钥，不得推送到GitHub。
+迁移版本：`a04d5fc6e834`。默认schema只保留心语业务，数据升级兼容说明见 [数据库升级与归档](./database-upgrades.md)。`.runtime` 包含私有附件、进程日志和可选微信加密密钥，不得推送到GitHub。
 
 ## 微信接口准备
 

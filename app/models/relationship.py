@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -56,6 +56,22 @@ class RelationshipSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     owner: Mapped[str] = mapped_column(String(64), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    id: Mapped[str] = mapped_column(String(36), unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    device_label: Mapped[str] = mapped_column(String(120), default="Unknown")
+    ip_tag: Mapped[str] = mapped_column(String(16), default="")
+
+
+class RelationshipAuthEvent(Base):
+    __tablename__ = "relationship_auth_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    event: Mapped[str] = mapped_column(String(40))
+    device_label: Mapped[str] = mapped_column(String(120))
+    ip_tag: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class RelationshipLoginLimit(Base):

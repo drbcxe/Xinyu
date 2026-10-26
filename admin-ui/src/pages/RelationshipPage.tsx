@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import ReactMarkdown from 'react-markdown'
 import Icon from '../components/Icon'
+import AuthDialog from '../components/AuthDialog'
 import { api, localDate, toolNames } from '../relationshipApi'
 import type { Candidate, Item, Job, Plan, State, Turn } from '../relationshipApi'
 import './RelationshipPage.css'
@@ -25,7 +26,6 @@ export default function RelationshipPage() {
   const [older, setOlder] = useState<Turn[]>([])
   const [hasOlder, setHasOlder] = useState(true)
   const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null)
-  const [credentials, setCredentials] = useState({ username: '', password: '' })
   const [images, setImages] = useState<{ name: string; url: string }[]>([])
   const [transcript, setTranscript] = useState<string | null>(null)
   const [planForm, setPlanForm] = useState({ city: '', budget: '', when: '', preferences: '' })
@@ -59,7 +59,7 @@ export default function RelationshipPage() {
     const dialog = document.querySelector<HTMLElement>('.love-modal')
     const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]') ?? [])
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) { setDraft(null); setAuthMode(null); setTranscript(null); setCredentials({ username: '', password: '' }) }
+      if (event.key === 'Escape' && !saving) { setDraft(null); setAuthMode(null); setTranscript(null) }
       if (event.key !== 'Tab') return
       const elements = focusable(); const first = elements[0]; const last = elements.at(-1)
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
@@ -258,6 +258,6 @@ export default function RelationshipPage() {
 
     {draft && <div className="love-modal-backdrop"><section className="love-modal" role="dialog" aria-modal="true" aria-labelledby="love-modal-title"><h2 id="love-modal-title">{draft.kind === 'memory' ? '确认这条记忆' : '安排提醒'}</h2><p>核对后保存，不会通知伴侣。</p><form onSubmit={saveDraft}>{error && <p role="alert" className="love-alert">{error}</p>}<label>内容<textarea autoFocus required maxLength={500} rows={3} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>{draft.quote && <blockquote>来源：“{draft.quote}”</blockquote>}{draft.kind === 'reminder' && <label>提醒时间（设备时区）<input required type="datetime-local" value={draft.due_at} onChange={event => setDraft({ ...draft, due_at: event.target.value })} /><small>后台生成提醒记录；外部推送取决于通道连接。</small></label>}<div className="love-modal-actions"><button type="button" disabled={saving} onClick={() => setDraft(null)}>暂不保存</button><button className="love-primary" disabled={saving || !draft.title.trim()}>确认保存</button></div></form></section></div>}
     {transcript !== null && <div className="love-modal-backdrop"><section className="love-modal" role="dialog" aria-modal="true" aria-labelledby="transcript-title"><h2 id="transcript-title">核对截图文字</h2><p>确认双方身份、发言顺序和文字，可直接修改。</p><textarea className="love-transcript-editor" rows={12} value={transcript} onChange={event => setTranscript(event.target.value)} /><div className="love-modal-actions"><button onClick={() => setTranscript(null)}>返回</button><button className="love-primary" disabled={!transcript.trim()} onClick={() => { setText(current => (current ? current + '\n\n' : '') + transcript); setTranscript(null); setImages([]); requestKey.current = null }}>确认并放入输入框</button></div></section></div>}
-    {authMode && <div className="love-modal-backdrop"><section className="love-modal" role="dialog" aria-modal="true" aria-labelledby="account-title"><h2 id="account-title">{state?.account.username ? '账号管理' : authMode === 'register' ? '注册心语账号' : '登录心语'}</h2>{state?.account.username ? <><p>当前账号：{state.account.username}</p><button disabled={saving || busy} onClick={() => void task(async () => { await api('/auth/logout', 'POST'); await reloadSpace(); setAuthMode(null); setNotice('已退出。账号数据仍在，登录后可恢复。') })}>退出账号</button></> : <form onSubmit={event => { event.preventDefault(); void task(async () => { await api(`/auth/${authMode}`, 'POST', credentials); setCredentials({ username: '', password: '' }); await reloadSpace(); setAuthMode(null); setNotice(authMode === 'register' ? '注册成功，当前空间记录已保留。' : '已登录并打开账号空间。') }) }}><p>{authMode === 'register' ? '注册会保留当前访客记录。请妥善保存密码，当前未提供找回密码功能。' : '登录打开已有账号空间，当前访客记录不会自动合并。'}</p>{error && <p role="alert" className="love-alert">{error}</p>}<label>用户名<input required autoComplete="username" pattern="[A-Za-z0-9_\-]{3,40}" minLength={3} maxLength={40} value={credentials.username} onChange={event => setCredentials({ ...credentials, username: event.target.value })} placeholder="3–40 位字母、数字、下划线" /></label><label>密码<input required type="password" minLength={10} maxLength={128} autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={credentials.password} onChange={event => setCredentials({ ...credentials, password: event.target.value })} placeholder="至少 10 位" /></label><div className="love-modal-actions"><button type="button" disabled={saving} onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError('') }}>{authMode === 'login' ? '去注册' : '已有账号'}</button><button className="love-primary" disabled={saving}>{authMode === 'login' ? '登录' : '注册并保留记录'}</button></div></form>}<button className="love-modal-close" disabled={saving} onClick={() => { setAuthMode(null); setCredentials({ username: '', password: '' }); setError('') }}>关闭</button></section></div>}
+    {authMode && <AuthDialog username={state?.account.username ?? null} initialMode={authMode} onClose={() => setAuthMode(null)} onRefresh={reloadSpace} onNotice={setNotice} onBusy={setSaving} />}
   </div>
 }

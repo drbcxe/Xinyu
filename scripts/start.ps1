@@ -17,7 +17,7 @@ $env:PYTHONUTF8 = '1'
 $env:Path = "D:\DevTools\nodejs;D:\DevTools\npm-global;D:\DevTools\pnpm\bin;$env:Path"
 Push-Location $projectDir
 try {
-    & 'D:\docker_desktop\resources\bin\docker.exe' compose up -d --wait postgres
+    & 'D:\docker_desktop\resources\bin\docker.exe' compose up -d --wait postgres redis
     if ($LASTEXITCODE -ne 0) { throw 'Docker dependencies did not become healthy' }
     & $pythonExe -m alembic upgrade head
     if ($LASTEXITCODE -ne 0) { throw 'Database migration failed' }
