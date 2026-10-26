@@ -16,6 +16,6 @@ Python虚拟环境已重新生成启动入口并在新目录同步依赖；前�
 
 - Docker Compose项目名：`researchmate`（已显式固定）
 - PostgreSQL数据库及用户：`researchmate`
-- 数据卷：`researchmate_postgres_data`、`researchmate_redis_data`
+- 当前数据卷：`researchmate_postgres_data`
 
-这些标识不是产品名，修改它们需要真实数据库迁移，不能通过只改环境变量完成。历史科研说明和既有对话保留当时内容；当前历史模块提示词版本为 `xinyu-legacy-v3`。
+这些标识不是产品名，修改它们需要真实数据库迁移，不能通过只改环境变量完成。退役数据的隔离方式见 [数据库升级与归档](./database-upgrades.md)，应用只保留心语功能。

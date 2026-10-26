@@ -40,7 +40,7 @@ flowchart LR
     N -.授权后联调.-> WX[个人微信适配器]
 ```
 
-新恋爱模块复用FastAPI、SQLAlchemy与模型Provider；采用独立的有界工具循环。原科研模块的LangGraph流程继续保留，不能把它算作恋爱模块已接入LangGraph的证据。
+应用采用FastAPI、SQLAlchemy与模型Provider，Agent为独立的有界工具循环；后台执行由PostgreSQL队列和Worker负责。
 
 主要文件：
 
@@ -66,7 +66,7 @@ RELATIONSHIP_VISION_API_KEY=
 
 Windows：`scripts/start.ps1` 启动本机数据库依赖、API、Worker和前端；`scripts/stop.ps1` 只停止匹配进程记录的应用及子进程，不删除数据。日志位于忽略目录 `.runtime/logs`。运行时和依赖缓存在D盘。
 
-迁移版本：`e82b3da4c612`。保留所有原科研表与数据。`.runtime` 包含私有附件、进程日志和可选微信加密密钥，不得推送到GitHub。
+迁移版本：`f93c4eb5d723`。默认schema只保留心语业务，数据升级兼容说明见 [数据库升级与归档](./database-upgrades.md)。`.runtime` 包含私有附件、进程日志和可选微信加密密钥，不得推送到GitHub。
 
 ## 微信接口准备
 
