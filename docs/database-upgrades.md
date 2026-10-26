@@ -1,6 +1,6 @@
 # 数据库升级与归档
 
-当前迁移版本为 `f93c4eb5d723`。执行 `uv run alembic upgrade head` 后，默认 `public` schema 仅保留心语业务表与 Alembic 版本记录。
+当前迁移版本为 `a04d5fc6e834`。执行 `uv run alembic upgrade head` 后，默认 `public` schema 仅保留心语业务表与 Alembic 版本记录。新增会话公开 ID、设备信息及账号安全事件表，保留原账号和有效会话。
 
 退役模块已经从应用代码、页面、工具和依赖中移除。原有九张业务表移动到独立的 `research_archive` schema，原状态库移动到 `research_checkpoints_archive`。
 
@@ -12,4 +12,4 @@
 
 如需恢复归档结构，可在停用应用并备份数据库后，按迁移脚本的 `downgrade` 反向移动表。已经对外发送的通知不会因数据库回退而撤销。
 
-PostgreSQL连接身份及既有数据卷保留现有环境中的兼容标识。Redis已不再被应用使用，服务从Compose和启动脚本中移除；原容器停止，数据卷未物理删除。
+PostgreSQL连接身份及既有数据卷保留现有环境中的兼容标识。Redis现在用于心语账号验证码、限流、失败锁定与会话缓存/撤销，Compose使用新的 `auth_redis_data` 数据卷；原科研模块的 Redis 数据卷仍未物理删除，也不会被账号功能读取。

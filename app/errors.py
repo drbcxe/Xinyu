@@ -21,8 +21,14 @@ class AppError(Exception):
 
 
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    headers = {}
+    if exc.status_code == 429 and isinstance(exc.details, dict):
+        retry = exc.details.get("retry_after_seconds")
+        if isinstance(retry, int):
+            headers["Retry-After"] = str(max(retry, 1))
     return JSONResponse(
         status_code=exc.status_code,
+        headers=headers,
         content={
             "error": {"code": exc.code, "message": exc.message, "details": exc.details},
             "request_id": uuid4().hex,
