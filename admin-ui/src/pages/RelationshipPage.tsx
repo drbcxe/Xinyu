@@ -4,16 +4,18 @@ import { NavLink, useLocation } from 'react-router'
 import ReactMarkdown from 'react-markdown'
 import Icon from '../components/Icon'
 import AuthDialog from '../components/AuthDialog'
+import KnowledgePanel, { SourceCards } from '../components/KnowledgePanel'
 import { api, localDate, toolNames } from '../relationshipApi'
 import type { Candidate, Item, Job, Plan, State, Turn } from '../relationshipApi'
 import './RelationshipPage.css'
 
 type Draft = { kind: 'memory' | 'reminder'; title: string; quote: string; due_at: string; source_turn_id?: string; id?: string }
-const labels = { chat: '聊一聊', memories: '关于 TA', reminders: '重要事项', dates: '约会规划', settings: '偏好与设置' }
+const labels = { chat: '聊一聊', memories: '关于 TA', reminders: '重要事项', dates: '约会规划', knowledge: '资料检索', settings: '偏好与设置' }
+const graphLabels: Record<string, string> = { load_context: '读取个人背景', retrieve_context: '检索参考资料', call_model: '模型理解与生成', execute_tools: '执行工具', validate_answer: '校验结果与来源', finalize: '整理并保存结果' }
 
 export default function RelationshipPage() {
   const { pathname } = useLocation()
-  const tab = pathname.endsWith('/memories') ? 'memories' : pathname.endsWith('/reminders') ? 'reminders' : pathname.endsWith('/dates') ? 'dates' : pathname.endsWith('/settings') ? 'settings' : 'chat'
+  const tab = pathname.endsWith('/memories') ? 'memories' : pathname.endsWith('/reminders') ? 'reminders' : pathname.endsWith('/dates') ? 'dates' : pathname.endsWith('/knowledge') ? 'knowledge' : pathname.endsWith('/settings') ? 'settings' : 'chat'
   const [state, setState] = useState<State | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -112,7 +114,7 @@ export default function RelationshipPage() {
       await api(draft.id ? `/items/${draft.id}` : '/items', draft.id ? 'PUT' : 'POST', {
         ...draft, title: draft.title.trim(), due_at: draft.kind === 'reminder' ? new Date(draft.due_at).toISOString() : null, status: 'active',
       })
-      setDraft(null); setNotice('已保存。后台会在到期时生成提醒。'); await refresh()
+      setDraft(null); setNotice(draft.kind === 'memory' ? '偏好已保存，后台会更新检索索引。' : '已保存。后台会在到期时生成提醒。'); await refresh()
     })
   }
 
@@ -159,8 +161,10 @@ export default function RelationshipPage() {
       <div className="love-user"><span>你 · {new Date(turn.created_at).toLocaleString('zh-CN')}</span><p>{turn.content}</p></div>
       <div className="love-answer">
         <div className="love-answer-label">✦ 心语</div>
+        {!!turn.result.graph_trace?.length && <details className="love-graph-trace"><summary>查看执行过程 · {turn.result.graph_trace.length} 个步骤{turn.result.execution?.resumed ? ' · 已恢复执行' : ''}</summary><ol>{turn.result.graph_trace.map((step, index) => <li key={index}><span>{String(index + 1).padStart(2, '0')}</span><strong>{graphLabels[step.node] ?? step.node}{step.valid === false ? ' · 重新生成' : ''}{step.sources !== undefined ? ` · ${step.sources} 段参考` : ''}</strong><small>{step.milliseconds} ms</small></li>)}</ol><p>{turn.result.execution?.engine} · {turn.result.execution?.checkpointed ? '执行检查点已保存' : ''} · {turn.result.execution?.model_steps} 次模型调用 · {turn.result.execution?.tool_calls} 次工具调用{turn.result.execution?.usage.total_tokens ? ` · 主模型 ${turn.result.execution.usage.total_tokens} Token（不含重排）` : ''}</p>{[...new Set(turn.result.retrieval_trace?.flatMap(trace => trace.warnings) ?? [])].map(warning => <p className="knowledge-warning" key={warning}>{warning}</p>)}</details>}
         {!!turn.result.tool_trace?.length && <details className="love-tool-trace"><summary>查看实际工具执行 · {turn.result.tool_trace.length} 步</summary>{turn.result.tool_trace.map((trace, index) => <div key={index}><strong>{toolNames[trace.tool] ?? trace.tool}</strong><small>{trace.status === 'succeeded' ? '已完成' : '已拒绝'} · {trace.milliseconds} ms</small><pre>{JSON.stringify(trace.result, null, 2)}</pre></div>)}</details>}
         <ReactMarkdown>{turn.result.analysis}</ReactMarkdown>
+        {!!turn.result.sources?.length && <div className="love-source-section"><h3>本次回答参考的原文</h3><SourceCards sources={turn.result.sources} /></div>}
         {turn.result.uncertainty && <p className="love-uncertainty">需要留意：{turn.result.uncertainty}</p>}
         {turn.result.replies.map((reply, index) => <div className="love-reply" key={index}><small>表达建议 {index + 1}</small><p>{reply}</p><button onClick={() => { void navigator.clipboard.writeText(reply).then(() => setNotice('已复制，可以修改后再发给对方。')).catch(() => setError('复制失败，请手动选择文字复制')) }}>复制回复</button></div>)}
         {!!turn.result.candidates.length && <div className="love-candidates"><small>确认后才会保存</small>{turn.result.candidates.map((candidate, index) => <button disabled={saving} key={index} onClick={() => openCandidate(candidate, turn)}><span>{candidate.kind === 'memory' ? '◇ 偏好' : '◷ 事项'} · {candidate.title}</span><b>确认 →</b></button>)}</div>}
@@ -193,6 +197,7 @@ export default function RelationshipPage() {
         <NavLink to="/assistant/memories"><Icon name="heart" /><span>关于 TA</span></NavLink>
         <NavLink to="/assistant/reminders"><Icon name="bell" /><span>重要事项</span>{unread.length > 0 && <b>{unread.length}</b>}</NavLink>
         <NavLink to="/assistant/dates"><Icon name="calendar" /><span>约会规划</span></NavLink>
+        <NavLink to="/assistant/knowledge"><Icon name="search" /><span>资料检索</span></NavLink>
         <NavLink to="/assistant/settings"><Icon name="settings" /><span>偏好与设置</span></NavLink>
       </nav>
       <div className="love-sidebar-bottom"><div className="love-side-note"><Icon name="spark" /><p>让在意，有回应。</p><small>懂得表达，也记得行动。</small><NavLink to="/assistant/memories">看看已记住的事 <Icon name="arrow" /></NavLink></div><div className="love-side-identity"><span className="love-avatar">{state?.account.username?.slice(0, 1).toUpperCase() ?? 'U'}</span><div><strong>{state?.account.username ?? '我的个人空间'}</strong><small>{state?.account.username ? '已登录账号' : '访客模式 · 可注册保存'}</small></div></div></div>
@@ -205,6 +210,7 @@ export default function RelationshipPage() {
         {state && !state.worker_online && <div className="love-alert">后台任务未启动，分析和到期提醒暂时不会执行。请启动 scripts/worker.py。</div>}
         {!!unread.length && tab !== 'reminders' && <NavLink className="love-due" to="/assistant/reminders">◷ 有 {unread.length} 条未读提醒：{unread[0].title}</NavLink>}
         {!state && <div className="love-empty"><p>正在连接你的空间…</p><button onClick={() => { void reloadSpace().catch(err => setError(err.message)) }}>重新连接</button></div>}
+        {state && tab === 'knowledge' && <KnowledgePanel key={state.account.username ?? 'guest'} />}
 
         {state && tab === 'chat' && <>
           {!allTurns.length && <section className="love-welcome"><div className="love-hero-main"><div className="love-hero-copy"><div className="love-hero-pill"><Icon name="spark" />为真实的关系，多想一步</div><h1>好好沟通，<br /><span>从这里开始。</span></h1><p>一起读懂聊天里的在意，<br />找到自然的表达，记住值得用心的小事。</p></div><div className="love-hero-art" aria-hidden="true"><div className="love-art-orbit" /><div className="love-art-orbit second" /><div className="love-art-heart"><Icon name="heart" /></div><span className="love-art-chip first"><Icon name="chat" />理解语境</span><span className="love-art-chip second"><Icon name="memory" />记住偏好</span><i className="love-art-dot one" /><i className="love-art-dot two" /></div></div><div className="love-starters">{[{ title: '这句话，怎么回？', detail: '理清语境，找到自然表达', icon: 'chat' as const, value: '帮我看看这段聊天，怎么回复更自然？' }, { title: '把误会，好好说开', detail: '理解分歧，表达真实想法', icon: 'heart' as const, value: '我想解释一次误会，但不知道怎么开口。' }, { title: '重要的事，别忘了', detail: '记下约定，把关心放进行动', icon: 'bell' as const, value: '她下周有重要面试，我想记下来。' }].map(item => <button key={item.title} onClick={() => { setText(item.value); requestKey.current = null }}><span className="love-starter-icon"><Icon name={item.icon} /></span><strong>{item.title}</strong><small>{item.detail}</small><Icon name="arrow" /></button>)}</div></section>}

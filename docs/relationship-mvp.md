@@ -1,6 +1,6 @@
 # 心语 Xinyu：网页基础版
 
-更新日期：2026-10-26。入口：http://localhost:5173/assistant 。本轮用户已明确选择“先完成网页，微信接口准备好即可”。模型微调属于后续优化。
+更新日期：2026-10-27。入口：http://localhost:5173/assistant 。本轮用户已明确选择“先完成网页，微信接口准备好即可”。模型微调属于后续优化。
 
 ## 功能与边界
 
@@ -9,8 +9,8 @@
 | 文字沟通分析、回复建议 | 后台调用现有模型，结果持久化；可复制，不能代发给伴侣 |
 | 截图 | 最多两张PNG/JPEG，每张4MB；调用GLM-5.3-FlashX转录，先核对再分析 |
 | 偏好 | 有来源的候选必须由用户确认；可手动添加、修改、删除 |
-| 检索 | 全量偏好的关键词/词组召回；最多60条候选，超过8条时使用模型语义重排；不宣称使用向量数据库 |
-| 工具调用 | 最多6次工具、8轮模型循环；展示真实名称、结果和耗时 |
+| 检索 | 本地BGE向量/Qdrant与BM25混合召回、RRF融合及GLM语义重排；保留原文位置、版本并校验来源 |
+| 工具调用 | LangGraph条件工具循环，最多6次工具、8轮主模型调用；展示节点、工具和原文来源；PostgreSQL检查点恢复 |
 | 后台咨询 | PostgreSQL持久队列，独立Worker；刷新/关闭网页后仍可继续；失败可重试，重复请求去重 |
 | 重要事项 | 指定带时区时间、改期、取消、完成；每次修订有版本号 |
 | 提醒 | 独立Worker到期生成持久收件箱记录；同事项同版本不重复；取消/改期使旧未读提醒失效 |
@@ -30,9 +30,10 @@
 flowchart LR
     UI[React 网页] --> API[FastAPI / 账号空间隔离]
     API --> R[Redis 验证码 / 限流 / 会话]
+    API --> V[Qdrant / 本地Embedding]
     API --> Q[PostgreSQL 任务队列]
     Q --> W[独立 Worker]
-    W --> A[有预算的 Agent 工具循环]
+    W --> A[LangGraph 有界工具循环 / PostgreSQL检查点]
     A --> M[偏好与导入聊天检索]
     A --> C[待用户确认的候选]
     A --> D[约会参考方案]
@@ -41,7 +42,7 @@ flowchart LR
     N -.授权后联调.-> WX[个人微信适配器]
 ```
 
-应用采用FastAPI、SQLAlchemy与模型Provider，Agent为独立的有界工具循环；后台执行由PostgreSQL队列和Worker负责。
+应用采用FastAPI、SQLAlchemy与模型Provider，Agent通过LangGraph编排有界工具循环，PostgreSQL保存节点检查点；后台执行由持久队列和Worker负责。RAG采用Qdrant与本地中文Embedding，具体边界见[RAG与LangGraph](./rag-langgraph.md)。
 
 主要文件：
 
@@ -51,7 +52,7 @@ flowchart LR
 - `app/services/relationship_vision.py`：转录与图片大小/格式校验。
 - `app/services/relationship_weixin.py`：微信协议、授权、文本收发及提醒投递准备。
 - `app/routers/relationship.py`：账号范围内的API。
-- `admin-ui/src/pages/RelationshipPage.tsx`、`RelationshipPage.css`：五个页面视图与统一设计。
+- `admin-ui/src/pages/RelationshipPage.tsx`、`RelationshipPage.css`、`components/KnowledgePanel.tsx`：六个页面视图、原文来源和实际执行步骤。
 
 ## 配置与运行
 
@@ -67,7 +68,7 @@ RELATIONSHIP_VISION_API_KEY=
 
 Windows：`scripts/start.ps1` 启动本机数据库依赖、API、Worker和前端；`scripts/stop.ps1` 只停止匹配进程记录的应用及子进程，不删除数据。日志位于忽略目录 `.runtime/logs`。运行时和依赖缓存在D盘。
 
-迁移版本：`a04d5fc6e834`。默认schema只保留心语业务，数据升级兼容说明见 [数据库升级与归档](./database-upgrades.md)。`.runtime` 包含私有附件、进程日志和可选微信加密密钥，不得推送到GitHub。
+迁移版本：`b15e60d7f945`。默认schema只保留心语业务，数据升级兼容说明见 [数据库升级与归档](./database-upgrades.md)。`.runtime` 包含私有附件、进程日志和可选微信加密密钥，不得推送到GitHub。
 
 ## 微信接口准备
 

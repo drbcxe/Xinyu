@@ -14,6 +14,8 @@
 - 注册账号保留访客记录，在连接同一后端的其他设备登录使用。
 - 一次性图形验证码、登录失败锁定、登录设备管理、修改密码和最近安全动态。
 - 主动导入 UTF-8 TXT/JSON 聊天，或导出本空间的数据。
+- 用语义与关键词混合检索找回偏好、聊天原文，查看索引状态与回答来源。
+- 查看 LangGraph 实际执行步骤，失败任务可基于 PostgreSQL 检查点恢复。
 
 网页基础版已经接通真实模型及工具调用。个人微信按当前开发范围准备授权、文本收发与提醒投递接口，尚未进行真实账号授权联调。系统通知需要打开网页；关闭网页后的外部推送需另行连接微信。没有自动读取其他私聊、自动预订、支付或模型微调。
 
@@ -21,13 +23,14 @@
 
 - 前端：React、TypeScript、Vite、React Router。
 - 后端：FastAPI、Pydantic、SQLAlchemy、Alembic、PostgreSQL。
-- Agent：有预算的模型工具循环，偏好与聊天检索、待确认候选、约会规划。
+- Agent：LangGraph 状态图、条件工具循环、Pydantic 结构校验、PostgreSQL 检查点恢复。
+- RAG：LangChain 中文分块、本地 FastEmbed/BGE 中文向量、Qdrant、BM25、RRF 融合与 GLM 语义重排。
 - 后台：独立 Worker 与 PostgreSQL 持久任务队列、提醒收件箱。
 - 账号：scrypt 密码哈希、随机 HttpOnly/SameSite 会话；Redis 提供验证码、限流、失败锁定与会话缓存/撤销；当前不提供邮箱或短信找回。
 
 ## 启动
 
-本地 `.env` 按 `.env.example` 填写数据库、Redis 和模型配置，不要提交 API Key。需要 Python 3.12、Node.js、pnpm、PostgreSQL 和 Redis。
+本地 `.env` 按 `.env.example` 填写数据库、Redis、Qdrant 和模型配置，不要提交 API Key。需要 Python 3.12、Node.js、pnpm、PostgreSQL、Redis 和 Qdrant。本地中文 Embedding 不需要额外 API Key，模型缓存默认位于 D 盘。
 
 已有的 Windows 本地环境可以运行：
 
@@ -36,14 +39,15 @@ Set-Location -LiteralPath 'D:\Study\简历\Xinyu'
 .\scripts\start.ps1
 ```
 
-启动脚本使用本机 D:\DevTools 的运行时，启动 PostgreSQL、Redis、API、Worker 与前端。打开 [心语](http://localhost:5173/assistant)。停止应用进程运行 `.\scripts\stop.ps1`，数据库及数据卷保留。
+启动脚本使用本机 D:\DevTools 的运行时，启动 PostgreSQL、Redis、Qdrant、API、Worker 与前端。打开 [心语](http://localhost:5173/assistant)。停止应用进程运行 `.\scripts\stop.ps1`，数据库及数据卷保留。新机器首次运行需要先按下方命令下载 Embedding 模型。
 
 手动启动时，在独立终端运行 API、Worker 和前端；前端命令在 `admin-ui` 目录内执行：
 
 ```text
 uv sync
-docker compose up -d --wait postgres redis
+docker compose up -d --wait postgres redis qdrant
 uv run alembic upgrade head
+uv run python -m scripts.prepare_ai --download-model
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 uv run python -m scripts.worker
 pnpm install --frozen-lockfile
@@ -63,5 +67,6 @@ pnpm dev
 - [项目名称与本地环境](./docs/project-name.md)
 - [数据库升级与归档](./docs/database-upgrades.md)
 - [账号验证与 Redis](./docs/account-security.md)
+- [RAG、向量检索与 LangGraph](./docs/rag-langgraph.md)
 
 仓库：[drbcxe/Xinyu](https://github.com/drbcxe/Xinyu)。
