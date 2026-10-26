@@ -1,0 +1,4 @@
+run_id,project_id,model_name,dataset_version,split_id,protocol_version,metric_name,metric_unit,optimization,metric_value,seed
+R001,P001,baseline,synthetic_demo_v1,test_v1,eval_v1,RMSE,normalized,min,0.50,42
+R002,P001,candidate_v1,synthetic_demo_v1,test_v1,eval_v1,RMSE,normalized,min,0.45,42
+R003,P001,candidate_other_protocol,synthetic_demo_v1,test_v2,eval_v2,RMSE,normalized,min,0.30,42

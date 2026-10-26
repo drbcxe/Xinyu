@@ -29,10 +29,13 @@ class ComparisonError(ValueError):
         self.details = details or {}
 
 
-def _load_runs(path: Path) -> tuple[dict, str]:
+def parse_runs(raw: bytes) -> tuple[dict, str]:
+    """Validate original CSV bytes for both uploads and comparisons."""
     try:
-        raw = path.read_bytes()
-        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig"), newline=""))
+        text = raw.decode("utf-8-sig")
+        if "\x00" in text:
+            raise ComparisonError("INVALID_FILE", "CSV 不能包含 NUL 字符。")
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
         fields = reader.fieldnames or []
         if len(fields) != len(set(fields)) or not set(REQUIRED).issubset(fields):
             raise ComparisonError("INVALID_SCHEMA", "缺少必需列或存在重复列名。",
@@ -65,6 +68,15 @@ def _load_runs(path: Path) -> tuple[dict, str]:
         raise ComparisonError("INVALID_FILE", "无法读取有效的 UTF-8 CSV。",
                               {"reason": str(exc)}) from exc
     return runs, hashlib.sha256(raw).hexdigest()
+
+
+def _load_runs(path: Path) -> tuple[dict, str]:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ComparisonError("INVALID_FILE", "无法读取有效的 UTF-8 CSV。",
+                              {"reason": str(exc)}) from exc
+    return parse_runs(raw)
 
 
 def compare_runs(csv_path: str | Path, project_id: str,

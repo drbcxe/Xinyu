@@ -1,3 +1,46 @@
+# 心语 Xinyu
+
+帮助现实情侣理清沟通、生成自然回复、记住伴侣偏好并跟进重要事项的私人 AI 助手。
+
+**当前阶段：网页基础版可用；微信按当前范围完成接口准备，尚未授权联调。**
+
+![心语网页界面](./docs/images/xinyu-web.jpg)
+
+2026-10-26 起，项目由科研助手转向现实情侣沟通场景，正式名称为「心语 Xinyu」，Python 项目名为 `xinyu`，前端包名为 `xinyu-web`。打开 [心语](http://localhost:5173/assistant)：粘贴聊天或上传截图，核对转录后获取建议，确认保存伴侣偏好，安排重要事项及约会参考方案。
+
+已实现账号注册与跨浏览器登录、真实模型工具调用、相关记忆检索、后台任务、提醒收件箱、TXT/JSON 聊天导入、数据导出和约会方案保存。视觉模型使用 `glm-5.3-flashx`，可单独配置模型服务。后台提醒不依赖网页打开；系统通知仍需要网页打开，关闭网页后的外部推送需要另行连接微信。
+
+本地目录：`D:\Study\简历\Xinyu`。GitHub：[drbcxe/Xinyu](https://github.com/drbcxe/Xinyu)。Docker 项目标识与数据库用户继续保留 `researchmate`，用于兼容原有数据。详见 [名称调整记录](./docs/project-name.md)。
+
+## 启动网页基础版
+
+本地 `.env` 按 `.env.example` 填写数据库连接与模型参数；不要提交 API Key。项目依赖 Python 3.12、Node.js、pnpm 和 PostgreSQL。已有开发环境可运行：
+
+```powershell
+Set-Location -LiteralPath 'D:\Study\简历\Xinyu'
+.\scripts\start.ps1
+```
+
+Windows 启动脚本使用本机 `D:\DevTools` 的运行时，启动 FastAPI、独立 Worker、Vite，并复用现有 Docker PostgreSQL/Redis。停止应用进程运行 `.\scripts\stop.ps1`，数据库容器和数据卷会保留。
+
+也可在不同终端分别运行以下命令（前端命令在 `admin-ui` 内执行）：
+
+```text
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv run python -m scripts.worker
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+功能范围和真实验收记录见 [网页基础版说明](./docs/relationship-mvp.md)。旧科研模块仍可从 `/projects` 进入；新恋爱模块使用独立的工具循环和数据表，未训练模型。此版本默认仅本机访问，原科研接口尚未新增账号认证。
+
+<details>
+<summary>历史科研方向的设计与开发记录（原名 ResearchMate）</summary>
+
+---
+
 **ResearchMate（研伴）：科研项目协作 Agent**
 
 **当前开发入口：[每天约8小时的七天开发清单](./7天开发清单/README.md)**。包含每日前后端任务、LovAgent 源码对照、Git/GitHub 操作、Docker 部署与20项系统验收；由你亲手实现七天 v0.1。下文保留完整产品与后续扩展设计。
@@ -6,7 +49,64 @@
 
 设计日期：2026-10-20。定位：服务机器学习研究生和个人研发者，持续记住一个项目的背景、比较实验结果、执行受控工具，并按配置跟进任务。
 
-当前状态：业务方案与开发任务已落地；附带一个可运行的 CSV 实验比较工具。聊天界面、LLM Agent、数据库、队列、提醒和 MCP 均尚未实现。示例数据完全为合成数据，数值不属于用户研究成果。
+当前状态：已实现项目、CSV、实验比较、真实 GLM 工具调用 Agent 对话和跨会话项目偏好。独立聊天页支持新建/切换会话、多轮上下文、实际工具步骤和有来源的比较卡片；项目偏好页支持设置、修改、停用和查看修订记录。业务数据保存到 PostgreSQL，LangGraph 状态保存到独立的 agent_checkpoints schema，原始 CSV 保存到项目 `.runtime/artifacts`。登录、后台任务、待办、提醒、SSE 和 MCP 尚未实现。示例数据完全为合成数据，数值不属于用户研究成果。
+
+**当前后端启动方式**（从项目根目录执行，先在本地 `.env` 配置 `DATABASE_URL`）：
+
+```powershell
+docker compose up -d --wait postgres redis
+uv run alembic upgrade head
+uv run python scripts/init_checkpointer.py
+uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+打开 `http://127.0.0.1:8000/docs`。`POST /api/projects` 接收 `id`、`name`、`description`，成功返回 201；`GET /api/projects` 返回 `{items:[...]}`。编号以大写字母开头，最多 32 字符，其余字符允许大写字母、数字、下划线和连字符。重复编号返回 409 `PROJECT_EXISTS`，参数错误返回 422 `VALIDATION_ERROR`。
+
+前端从 `admin-ui` 目录运行 `pnpm.cmd dev`，打开 `http://localhost:5173`，自动跳到 `/projects`。页面使用 React Router，项目范围由网址中的 `projectId` 确定，可直接打开、刷新、前进或后退。前端通过 Vite 的 `/api` 代理访问后端，开发时需要同时运行前后端。
+
+| 页面 | 地址 | 职责 |
+|---|---|---|
+| 项目列表 | `/projects` | 浏览项目，点击进入工作台 |
+| 新建项目 | `/projects/new` | 填写资料，成功后跳到新项目工作台 |
+| 项目工作台 | `/projects/:projectId` | 项目背景，以及文件、比较入口 |
+| Agent 对话 | `/projects/:projectId/chat?thread=:threadId&artifact=:artifactId` | 自然语言提问、真实工具执行、消息和来源恢复 |
+| 项目偏好 | `/projects/:projectId/memories` | 查看、修订、停用偏好，追溯版本与聊天来源 |
+| 文件与实验 | `/projects/:projectId/files` | 上传 CSV、浏览文件；上传成功跳到文件详情 |
+| 实验详情 | `/projects/:projectId/files/:artifactId` | 展示指定文件的实验表和来源，可进入比较页 |
+| 实验比较 | `/projects/:projectId/comparisons?artifact=:artifactId` | 选择文件、比较实验、查看历史结果 |
+| 系统概览 | `/overview` | 健康与模型配置状态 |
+
+各页共享侧栏、面包屑；项目内显示工作台、Agent 对话、文件与实验、实验比较导航。无效页面有 404 返回入口，项目或文件读取失败可重试。独立详情页通过 `GET /api/projects/{project_id}` 和 `GET /api/projects/{project_id}/artifacts/{artifact_id}` 读取资料，后端继续检查项目归属。后续生产托管需要支持前端地址回退到 `index.html`，并保留 `/api` 的真实错误响应。
+
+**与 Agent 对话**：进入项目内“Agent 对话”，新建会话并选择实验文件，输入“以 R001 为基线，比较 R002 的改善幅度”。模型使用 function calling 自主选择 `get_project_context`、`list_runs`、`compare_runs`，LangGraph 执行 context_loading → generation → tools → generation 循环。比较工具调用同一业务服务，成功结果直接作为聊天中的比较卡片；业务拒绝作为结构化工具结果交回模型解释。项目、会话、当前文件和执行 ID 从后端上下文注入，不接受模型指定宿主机路径或切换项目范围。
+
+模型配置继续读取 `.env` 的 `MODEL_BASE_URL`、`MODEL_NAME` 和 `MODEL_API_KEY`。GLM 适配通过 HTTPX 保留 `reasoning_content` 等消息字段和 tool_call_id 配对；仅答复、工具事件及证据返回页面，内部推理不展示。可选配置 `MODEL_TIMEOUT_SECONDS=60`、`MODEL_MAX_TOKENS=4096`、`AGENT_TIMEOUT_SECONDS=300`。每轮最多 6 次工具调用，暂时性模型错误全轮最多重试 2 次；超过预算或出现系统错误会保存真实失败状态，不用固定回答冒充模型成功。
+
+**跨会话项目偏好**：可以说“记住，这个项目默认以 R001 为基线，回复请简短”，由 `get_project_preferences` 和 `revise_memory` 读取版本并真实保存。仅支持默认基线、关注指标、回复长度（简短/适中/详细）和报告语言（中文/英文）。后端验证来源逐字来自当前真实用户消息，并保留 source_message_id；普通讨论不应自动记忆。每次模型调用都从数据库加载当前项目的最新版本，停用值不加入偏好召回。旧聊天仍保留，不代表旧值继续生效。默认基线仍需在当前文件存在且满足比较条件，偏好不能改变实验事实。详见 [项目偏好开发记录](docs/day04-memory.md)。
+
+偏好接口：`GET /api/projects/{project_id}/memories`、`PUT /memories/{key}`（value、expected_revision，首次为 0）、`POST /memories/{key}/deactivate`（expected_revision）、`GET /memories/{key}/history`（最近 50 版本）。修改和停用均创建新修订；项目行锁与版本号避免并发覆盖，过时版本返回 409 `REVISION_CONFLICT`。停用仅停止召回，保留聊天、来源与审计记录。当前仍是本机单用户开发阶段，Day 4 的登录与 interrupt/resume 流程另行实现。
+
+会话、消息、AgentRun 和 RunEvent 是业务表，由 Alembic 迁移；LangGraph 表由幂等脚本 `scripts/init_checkpointer.py` 单独初始化，置于 `agent_checkpoints` schema，避免业务迁移误删。页面读取最近 60 条消息；图上下文保留最近最多 4 个完整工具交互回合并限制历史大小，数据库不因此删除旧消息。相同会话的 request_id 去重，不同内容复用编号返回 REQUEST_ID_CONFLICT；同会话同时执行第二条消息返回 THREAD_BUSY。Agent 比较使用 run_id＋tool_call_id 去重并关联结果。执行进程异常中断后，超过租约的 running 记录在读取会话或继续提交时标为失败，保留已经完成的比较结果。
+
+当前 POST runs 在同步路由执行图后返回 `{run_id,status}`；聊天页在等待期间每 1.5 秒读取消息和持久化事件，展示真实工具进度，SSE 后续再接。前端连接中断时“恢复本次请求”沿用原 request_id。模型平台认证、权限、配额和连接错误会明确显示。真实 API 演示记录见 [Agent 接入记录](./docs/day03-agent.md)。
+
+**上传实验 CSV**：进入项目工作台，打开“文件与实验”。可以下载合成演示 CSV；其每行 `project_id` 为 `P001`，应先创建并进入 `P001`。也可直接上传 `examples/runs_demo.csv`。导入成功跳到文件详情，显示 R001/R002/R003、原始指标字符串、评估口径和 CSV 行号；R003 使用不同的评估协议，不能与 R001 直接比较。
+
+文件要求：UTF-8 或 UTF-8 BOM、`.csv`、最多 5 MiB、1—10000 条记录，所有必需字段非空；同文件内 `run_id` 唯一，`optimization` 只能为 `min` 或 `max`，`metric_value` 必须是允许范围内的有限数值，每行项目编号必须等于所选项目。必需列如下：
+
+```text
+run_id,project_id,model_name,dataset_version,split_id,protocol_version,metric_name,metric_unit,optimization,metric_value,seed
+```
+
+`POST /api/projects/{project_id}/artifacts` 使用 multipart 字段 `file`，首次导入返回 201，响应包含 `id`、`project_id`、`original_name`、`sha256`、`size_bytes`、`row_count`、`created_at`、`reused`。同一项目内相同原始字节内容按 SHA256 去重，复用时返回 200 与 `reused:true`，保留原文件名称；内容发生变化会产生新记录。`GET /api/projects/{project_id}/artifacts` 返回 `{items:[...]}`；`GET /api/projects/{project_id}/artifacts/{artifact_id}/runs` 返回实验列表，同样使用 `{items:[...]}`，并校验文件的项目归属。
+
+整个 CSV 校验通过后才保存文件、在同一数据库事务中写入文件和全部实验。原文件使用应用生成的 UUID 文件名保存，上传临时目录为 `.runtime/upload-tmp`，当前工作区两者均在 D 盘。不要将 `.runtime`、真实数据或 `.env` 提交到 Git。数据库与原文件需要一同保留；事务提交结果不明确时保留原文件，避免删除可能已提交记录的来源文件。
+
+**比较实验**：从文件详情点击“比较此文件中的实验”，或通过项目内“实验比较”导航进入，选择文件后使用“比较两组实验”表单选择基线和候选。当前文件 ID 保存在查询参数 `artifact` 中。后端复用 `tools.compare_runs.compare_runs` 进行 Decimal 计算，再校验本次计算所用文件的 SHA256 与上传记录相同，成功才保存比较记录。页面展示原始数值、差值、按指标优化方向计算的改善量、相对改善率、ECharts 柱状图和来源明细。图表按统一比例绘制；精确数值与改善率使用后端结果，前端不重新计算业务结论。
+
+演示数据中，R001 → R002 的 RMSE 从 0.50 变为 0.45，绝对改善 0.05、相对改善 10%；R001 → R003 返回 422 `INCOMPARABLE_RUNS`，页面列出 `split_id` 和 `protocol_version` 的差异。同实验返回 `SAME_RUN`；缺少原文件、原文件大小或哈希发生变化时拒绝生成结果。基线为零或负数时相对改善率为 null，仅展示绝对变化，不推断统计显著性或总体最优。
+
+`POST /api/projects/{project_id}/comparisons` 接收 `{artifact_id,baseline_run_id,candidate_run_id}`，成功返回 201，包含 `id`、`project_id`、`artifact_id`、`created_at`、`status`、`metric`、`baseline`、`candidate`、`comparison`、`provenance`。响应及持久化结果不包含宿主机文件路径。`GET /api/projects/{project_id}/comparisons?artifact_id=...` 返回当前文件最近 20 条成功结果 `{items:[...]}`，页面点击历史记录可恢复显示；`GET /api/projects/{project_id}/comparisons/{comparison_id}` 查询一条已保存结果。查询均检查项目范围。当前比较功能不调用大模型。
 
 **1．为什么这个方向适合你**
 
@@ -121,9 +221,9 @@ LangGraph 官方把 thread 内状态的 checkpointer 与跨 thread 的 store 分
 | 扩展 | pgvector、MCP SDK、独立 PyTorch 服务 | 项目资料检索和专业工具 |
 | 交付 | Langfuse、Playwright、Docker Compose、GitHub Actions | trace、关键行为回归与复现 |
 
-实施时先核对官方当前稳定版本和兼容性，再生成 uv/pnpm 锁文件；本目录尚未完成这项初始化，不预填未经安装验证的版本号。
+后端和前端依赖已分别记录在 `pyproject.toml`/`uv.lock` 与 `admin-ui/package.json`/`admin-ui/pnpm-lock.yaml`；后续依赖变更应同步提交锁文件。
 
-你当前 Windows 环境能找到 Python、Node、Git、pnpm 和 Docker CLI；本次未找到 uv 命令，Docker Linux engine 未启动。因此后续环境关卡先补齐 uv、启动 Docker Desktop 并验证 Linux 容器。Celery worker 在 Linux 容器或 WSL2 中运行，官方当前不支持原生 Windows。[Celery FAQ](https://docs.celeryq.dev/en/stable/faq.html)
+本地开发使用 Windows、uv 管理的 Python 虚拟环境和 Docker Desktop Linux 容器。运行数据库功能前需启动 Docker Desktop。后续 Celery worker 在 Linux 容器或 WSL2 中运行，官方当前不支持原生 Windows。[Celery FAQ](https://docs.celeryq.dev/en/stable/faq.html)
 
 研究模型继续使用其已验证的环境，通过独立服务接入。
 
@@ -165,3 +265,4 @@ python -X utf8 -m unittest discover -s tests -v
 
 成功用例会给出合成数据中 RMSE 从 0.50 到 0.45、改善 10% 的计算结果与来源行；这只演示工具算法。将 candidate 改为 R003 会因划分与协议不同而拒绝比较，命令退出码为 2。
 
+</details>
