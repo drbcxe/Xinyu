@@ -1,5 +1,5 @@
 {
-  "name": "admin-ui",
+  "name": "xinyu-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "react-router": "^8.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

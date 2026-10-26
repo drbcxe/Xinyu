@@ -1,12 +1,17 @@
 [project]
-name = "researchmate"
+name = "xinyu"
+description = "Xinyu 心语：帮助现实情侣理解沟通、记住偏好并跟进重要事项的私人 AI 助手"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.1",
+    "cryptography>=50.0.2",
     "fastapi>=0.156.8",
     "httpx>=0.28.1",
-    "langchain-openai>=1.7.2",
+    "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.1",
+    "python-multipart>=0.0.32",
+    "sqlalchemy>=2.1.6",
     "uvicorn[standard]>=0.54.0",
 ]
 

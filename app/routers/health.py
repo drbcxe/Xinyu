@@ -1,5 +1,4 @@
 from typing import Annotated
-
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends
