@@ -2,7 +2,9 @@
 
 当前迁移版本为 `f93c4eb5d723`。执行 `uv run alembic upgrade head` 后，默认 `public` schema 仅保留心语业务表与 Alembic 版本记录。
 
-退役模块已经从应用代码、页面、工具和依赖中移除。原有九张业务表移动到独立的 `research_archive` schema，原状态库移动到 `research_checkpoints_archive`，原私有附件移动到 `.runtime/archive/research/artifacts`。
+退役模块已经从应用代码、页面、工具和依赖中移除。原有九张业务表移动到独立的 `research_archive` schema，原状态库移动到 `research_checkpoints_archive`。
+
+按照用户的数据存放要求，原私有附件现已放回 `D:\Study\简历\ResearchMate\.runtime\artifacts`，数据库备份及可查看的CSV记录位于该旧目录的 `.runtime/database/20261026-220749/`。附件移动前后SHA-256一致；PostgreSQL备份包含上述两个schema的13张表，并通过 `pg_restore --list` 检查。心语不会读取该目录。
 
 归档不删除原始记录，应用没有归档查询接口，也不把它们加入恋爱助手的检索范围。升级时已核对九张表的行数，迁移前后保持一致。归档不进入Git。
 
