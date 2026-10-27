@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.errors import AppError
 from app.models.relationship import (
     RelationshipAccount,
+    RelationshipFeedback,
     RelationshipItem,
     RelationshipJob,
     RelationshipNotice,
@@ -31,8 +32,8 @@ from app.schemas.relationship import (
     ItemUpdate,
     ProfileInput,
 )
+from app.services.account_closure import purge_content
 from app.services.auth_cache import consume_rate
-from app.services.graph_checkpoints import clear_checkpoints
 from app.services.relationship_auth import Owner, check_origin
 from app.services.relationship_jobs import enqueue, get_profile, job_data
 from app.services.relationship_rag import index_status, retrieve, schedule_index
@@ -84,11 +85,14 @@ def item_data(item):
 
 def lock_owner(db, owner):
     get_profile(db, owner)
-    return db.scalar(
+    profile = db.scalar(
         select(RelationshipProfile)
         .where(RelationshipProfile.owner == owner)
         .with_for_update()
     )
+    if not profile:
+        raise AppError(401, "SPACE_CLOSED", "原账号空间已注销，请重新打开页面")
+    return profile
 
 
 def invalidate_notices(db, item_id):
@@ -537,19 +541,7 @@ async def import_chat(
 @router.delete("/history")
 def clear_history(db: DB, owner: Owner):
     lock_owner(db, owner)
-    for item in db.scalars(
-        select(RelationshipItem).where(RelationshipItem.owner == owner)
-    ):
-        schedule_index(db, item, deleted=True)
-    clear_checkpoints(owner)
-    for model in (
-        RelationshipJob,
-        RelationshipNotice,
-        RelationshipItem,
-        RelationshipTurn,
-    ):
-        for row in db.scalars(select(model).where(model.owner == owner)).all():
-            db.delete(row)
+    purge_content(db, owner)
     db.commit()
     return {"ok": True}
 
@@ -644,9 +636,30 @@ def export_data(db: DB, owner: Owner):
                         select(RelationshipItem).where(RelationshipItem.owner == owner)
                     ).all()
                 ],
+                "feedback": [
+                    {
+                        key: getattr(row, key)
+                        for key in (
+                            "turn_id",
+                            "rating",
+                            "category",
+                            "comment",
+                            "created_at",
+                            "updated_at",
+                        )
+                    }
+                    for row in db.scalars(
+                        select(RelationshipFeedback).where(
+                            RelationshipFeedback.owner == owner
+                        )
+                    )
+                ],
             }
         ),
-        headers={"Content-Disposition": 'attachment; filename="xinyu-export.json"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="xinyu-export.json"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

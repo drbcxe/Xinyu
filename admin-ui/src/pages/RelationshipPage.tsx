@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import Icon from '../components/Icon'
 import AuthDialog from '../components/AuthDialog'
 import UsagePanel from '../components/UsagePanel'
+import FeedbackControls from '../components/FeedbackControls'
 import KnowledgePanel, { SourceCards } from '../components/KnowledgePanel'
 import { api, localDate, toolNames } from '../relationshipApi'
 import type { Candidate, Item, Job, Plan, State, Turn } from '../relationshipApi'
@@ -199,6 +200,7 @@ export default function RelationshipPage() {
         {turn.result.replies.map((reply, index) => <div className="love-reply" key={index}><small>表达建议 {index + 1}</small><p>{reply}</p><button onClick={() => { void navigator.clipboard.writeText(reply).then(() => setNotice('已复制，可以修改后再发给对方。')).catch(() => setError('复制失败，请手动选择文字复制')) }}>复制回复</button></div>)}
         {!!turn.result.candidates.length && <div className="love-candidates"><small>确认后才会保存</small>{turn.result.candidates.map((candidate, index) => <button disabled={saving} key={index} onClick={() => openCandidate(candidate, turn)}><span>{candidate.kind === 'memory' ? '◇ 偏好' : '◷ 事项'} · {candidate.title}</span><b>确认 →</b></button>)}</div>}
         {turn.result.date_plans?.map((plan, index) => <div className="love-reply love-plan" key={index}><h3>{plan.title}</h3><small>参考预算：{plan.budget}</small><ol>{plan.schedule.map((entry, i) => <li key={i}>{entry}</li>)}</ol><p>{plan.reason}</p>{!!plan.needs_confirmation.length && <p className="love-uncertainty">待核实：{plan.needs_confirmation.join('；')}</p>}<button disabled={saving} onClick={() => void savePlan(plan, turn, index)}>保存这个方案</button></div>)}
+        <FeedbackControls turnId={turn.id} />
       </div>
     </article>
   }

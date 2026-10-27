@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import PROJECT_ROOT
 from app.errors import AppError, app_error_handler, validation_error_handler
 from app.routers.account_email import router as account_email_router
+from app.routers.account_privacy import router as account_privacy_router
 from app.routers.health import router as health_router
 from app.routers.relationship import router as relationship_router
 from app.services.relationship_auth import router as relationship_auth_router
@@ -44,3 +45,4 @@ app.include_router(health_router, prefix="/api")
 app.include_router(relationship_router, prefix="/api")
 app.include_router(relationship_auth_router, prefix="/api")
 app.include_router(account_email_router, prefix="/api")
+app.include_router(account_privacy_router, prefix="/api")

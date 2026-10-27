@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.errors import AppError
 from app.models.relationship import (
+    RelationshipClosedSpace,
     RelationshipItem,
     RelationshipJob,
     RelationshipNotice,
@@ -27,16 +28,27 @@ logger = logging.getLogger(__name__)
 
 
 def get_profile(db: Session, owner: str):
+    if db.get(RelationshipClosedSpace, owner):
+        raise AppError(401, "SPACE_CLOSED", "原账号空间已注销，请重新打开页面")
     existing = db.get(RelationshipProfile, owner)
     if existing:
         return existing
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:owner,718302620))"),
+        {"owner": owner},
+    )
+    if db.get(RelationshipClosedSpace, owner, populate_existing=True):
+        raise AppError(401, "SPACE_CLOSED", "原账号空间已注销，请重新打开页面")
     db.execute(
         insert(RelationshipProfile)
         .values(owner=owner, partner_name="伴侣", style="自然、简短，不要油腻或说教")
         .on_conflict_do_nothing(index_elements=["owner"])
     )
     db.commit()
-    return db.get(RelationshipProfile, owner)
+    profile = db.get(RelationshipProfile, owner)
+    if not profile:
+        raise AppError(401, "SPACE_CLOSED", "原账号空间已注销，请重新打开页面")
+    return profile
 
 
 def enqueue(
@@ -48,11 +60,13 @@ def enqueue(
     ip_scope: str = "local",
 ):
     get_profile(db, owner)
-    db.scalar(
+    profile = db.scalar(
         select(RelationshipProfile)
         .where(RelationshipProfile.owner == owner)
         .with_for_update()
     )
+    if not profile:
+        raise AppError(401, "SPACE_CLOSED", "原账号空间已注销，请重新打开页面")
     existing = db.scalar(
         select(RelationshipJob).where(
             RelationshipJob.owner == owner, RelationshipJob.request_id == request_id

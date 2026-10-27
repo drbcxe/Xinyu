@@ -20,6 +20,7 @@ from app.errors import AppError
 from app.models.relationship import (
     RelationshipAccount,
     RelationshipAuthEvent,
+    RelationshipClosedSpace,
     RelationshipSession,
 )
 from app.repositories.database import get_db
@@ -121,7 +122,7 @@ def owner_id(request: Request, response: Response, db: DB) -> str:
             owner = resolve_session(db, key)
             if owner:
                 return owner
-        elif not db.scalar(
+        elif not db.get(RelationshipClosedSpace, key) and not db.scalar(
             select(RelationshipAccount.username).where(RelationshipAccount.owner == key)
         ):
             return key

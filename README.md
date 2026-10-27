@@ -14,6 +14,7 @@
 - 注册账号保留访客记录，在连接同一后端的其他设备登录使用。
 - 一次性图形验证码、登录失败锁定、登录设备管理、修改密码和最近安全动态。
 - 绑定已验证邮箱、SMTP 后台发送验证码、通过邮箱重置密码并撤销旧会话。
+- 身份验证后注销账号并查看后台清理回执；对咨询建议提交、修改或删除反馈。
 - 取消任务、故障退避重试、用量预算展示；列表分页和按需查看聊天原文。
 - 主动导入 UTF-8 TXT/JSON 聊天，或导出本空间的数据。
 - 用语义与关键词混合检索找回偏好、聊天原文，查看索引状态与回答来源。
@@ -71,6 +72,7 @@ pnpm dev
 - [账号验证与 Redis](./docs/account-security.md)
 - [RAG、向量检索与 LangGraph](./docs/rag-langgraph.md)
 - [邮箱绑定与密码找回](./docs/email-recovery.md)
+- [账号注销、清理回执与反馈](./docs/account-closure-feedback.md)
 - [任务控制、用量与分页读取](./docs/task-controls.md)
 - [工程化完整范围与进度](./docs/enterprise-readiness.md)
 

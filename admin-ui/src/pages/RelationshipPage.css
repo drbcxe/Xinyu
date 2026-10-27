@@ -258,3 +258,12 @@
 .love-usage-meters progress { width: 100%; height: 9px; accent-color: #9b75bd; }
 .love-usage small { display: block; color: #81788e; line-height: 1.8; margin: 12px 0; }
 @media (max-width: 600px) { .love-usage-meters { grid-template-columns: 1fr; gap: 16px; } }
+.love-feedback { margin-top: 22px; padding-top: 14px; border-top: 1px solid #ede9f2; font-size: 12px; }
+.love-feedback > button { color: #857592; border: 0; background: transparent; padding-left: 0; }
+.love-feedback-form { margin-top: 12px; padding: 16px; background: #faf8fd; border: 1px solid #eee8f5; border-radius: 14px; }
+.love-feedback fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.love-feedback label { flex: 1 1 40%; display: flex; flex-direction: column; gap: 8px; }
+.love-feedback label:has(textarea) { flex-basis: 100%; }
+.love-feedback select, .love-feedback textarea { border: 1px solid #e3dbe9; border-radius: 9px; padding: 9px; background: white; color: #493e58; font: inherit; }
+.love-feedback small { display: block; color: #8e8298; margin-top: 10px; line-height: 1.7; }
+.love-feedback fieldset > div { display: flex; gap: 10px; flex-wrap: wrap; }

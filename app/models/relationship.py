@@ -223,3 +223,26 @@ class RelationshipEmailOutbox(Base):
     )
     error: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipClosedSpace(Base):
+    __tablename__ = "relationship_closed_spaces"
+    owner: Mapped[str] = mapped_column(String(64), primary_key=True)
+    receipt_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    cleanup_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RelationshipFeedback(Base):
+    __tablename__ = "relationship_feedback"
+    __table_args__ = (UniqueConstraint("owner", "turn_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    turn_id: Mapped[str] = mapped_column(String(36))
+    rating: Mapped[str] = mapped_column(String(20))
+    category: Mapped[str] = mapped_column(String(30))
+    comment: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

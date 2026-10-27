@@ -5,6 +5,7 @@ import time
 from uuid import uuid4
 
 from app.config import get_settings
+from app.services.account_closure import reconcile_closed_spaces
 from app.services.account_email import process_email
 from app.services.relationship_jobs import dispatch_reminders, process_one
 from app.services.relationship_rag import process_index
@@ -38,6 +39,7 @@ def main():
                     email_future = pool.submit(process_email)
                 if time.monotonic() - reconciled_at > 60:
                     reconcile_abandoned_calls()
+                    reconcile_closed_spaces()
                     reconciled_at = time.monotonic()
                 if index_future is None or index_future.done():
                     if index_future is not None:
