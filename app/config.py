@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     smtp_password: SecretStr = SecretStr("")
     smtp_from: str = ""
     smtp_timeout_seconds: int = Field(default=10, ge=1, le=30)
+    ops_token: SecretStr = SecretStr("")
+    database_connect_timeout: int = Field(default=5, ge=1, le=30)
+    database_statement_timeout_ms: int = Field(default=30000, ge=1000, le=120000)
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

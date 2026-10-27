@@ -19,7 +19,8 @@ def checkpoint_store() -> Iterator[PostgresSaver]:
         autocommit=True,
         prepare_threshold=0,
         row_factory=dict_row,
-        options="-c search_path=xinyu_graph",
+        connect_timeout=get_settings().database_connect_timeout,
+        options=f"-c search_path=xinyu_graph -c statement_timeout={get_settings().database_statement_timeout_ms}",
     ) as conn:
         yield PostgresSaver(conn)
 

@@ -194,16 +194,16 @@ def image_transcript(payload: ImageInput, request: Request, db: DB, owner: Owner
 def start_run(payload: ChatInput, request: Request, db: DB, owner: Owner):
     if not payload.content.strip():
         raise AppError(422, "EMPTY_MESSAGE", "请输入聊天内容")
-    return job_data(
-        enqueue(
-            db,
-            owner,
-            str(payload.request_id),
-            payload.content.strip(),
-            payload.mode,
-            ip_scope=request.client.host if request.client else "local",
-        )
+    job = enqueue(
+        db,
+        owner,
+        str(payload.request_id),
+        payload.content.strip(),
+        payload.mode,
+        ip_scope=request.client.host if request.client else "local",
     )
+    request.state.job_id = job.id
+    return job_data(job)
 
 
 @router.get("/runs/{run_id}")

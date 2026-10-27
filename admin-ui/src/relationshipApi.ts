@@ -15,9 +15,11 @@ export type State = { version: string; history_has_more: boolean; item_counts: R
 export class ApiError extends Error {
   code: string
   details: Record<string, unknown>
-  constructor(message: string, code: string, details: unknown) {
+  requestId?: string
+  constructor(message: string, code: string, details: unknown, requestId?: string) {
     super(message)
     this.name = 'ApiError'; this.code = code
+    this.requestId = requestId
     this.details = details && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : {}
   }
 }
@@ -30,7 +32,11 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     body: body ? form ? body : JSON.stringify(body) : undefined,
   })
   const data = await response.json().catch(() => null)
-  if (!response.ok) throw new ApiError(data?.error?.message ?? '请求失败，请检查后端连接', data?.error?.code ?? 'REQUEST_FAILED', data?.error?.details)
+  if (!response.ok) {
+    const requestId = response.headers.get('X-Request-ID') ?? data?.request_id
+    const message = data?.error?.message ?? '请求失败，请检查后端连接'
+    throw new ApiError(response.status >= 500 && requestId ? `${message}（请求编号：${requestId}）` : message, data?.error?.code ?? 'REQUEST_FAILED', data?.error?.details, requestId)
+  }
   if (!data) throw new Error('接口未返回 JSON，请检查 /api 代理')
   return data as T
 }

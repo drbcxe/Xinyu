@@ -45,6 +45,7 @@ class Operation:
     purpose: str
     check_active: Callable[[], None] | None = None
     progress: Callable[[str, int], None] | None = None
+    job_id: str | None = None
 
 
 operation_context: ContextVar[Operation | None] = ContextVar(
@@ -54,9 +55,14 @@ operation_context: ContextVar[Operation | None] = ContextVar(
 
 @contextmanager
 def operation_scope(
-    owner: str, operation_id: str, purpose: str, check_active=None, progress=None
+    owner: str,
+    operation_id: str,
+    purpose: str,
+    check_active=None,
+    progress=None,
+    job_id=None,
 ) -> Iterator[Operation]:
-    operation = Operation(owner, operation_id, purpose, check_active, progress)
+    operation = Operation(owner, operation_id, purpose, check_active, progress, job_id)
     token = operation_context.set(operation)
     try:
         yield operation
@@ -352,7 +358,14 @@ def estimate_input(messages: list[dict], tools: list[dict]) -> int:
 @contextmanager
 def provider_slot(deadline: float):
     token = str(uuid4())
-    lease_ms = max(30000, math.ceil((deadline - time.monotonic() + 30) * 1000))
+    # HTTPX read timeouts apply to each read. The streamed body checks the wall deadline between chunks.
+    lease_ms = max(
+        30000,
+        math.ceil(
+            (deadline - time.monotonic() + get_settings().model_timeout_seconds + 30)
+            * 1000
+        ),
+    )
     with auth_cache() as cache:
         acquired = cache.eval(
             TAKE_SLOT,

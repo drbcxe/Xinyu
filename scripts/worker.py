@@ -1,12 +1,15 @@
 """Run with: uv run python -m scripts.worker (independent from FastAPI)."""
 
 import concurrent.futures
+import logging
 import time
 from uuid import uuid4
 
 from app.config import get_settings
 from app.services.account_closure import reconcile_closed_spaces
 from app.services.account_email import process_email
+from app.services.observability import configure_logging
+from app.services.ops_status import operational_status
 from app.services.relationship_jobs import dispatch_reminders, process_one
 from app.services.relationship_rag import process_index
 from app.services.resource_control import reconcile_abandoned_calls
@@ -16,16 +19,17 @@ from app.services.runtime_state import remove_heartbeat, write_heartbeat
 def main():
     from app.services.relationship_weixin import deliver_notices, poll_bindings
 
-    print(
-        "Xinyu worker started: durable advice jobs, reminders and optional Weixin channel"
-    )
+    configure_logging("worker")
+    logger = logging.getLogger(__name__)
+    logger.info("worker_started")
     concurrency = get_settings().worker_advice_concurrency
     worker_id = str(uuid4())
-    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency + 3) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency + 4) as pool:
         futures = []
         channel_future = None
         index_future = None
         email_future = None
+        maintenance_future = None
         reconciled_at = 0
         while True:
             try:
@@ -37,9 +41,33 @@ def main():
                         email_future = None
                         completed_email.result()
                     email_future = pool.submit(process_email)
-                if time.monotonic() - reconciled_at > 60:
-                    reconcile_abandoned_calls()
-                    reconcile_closed_spaces()
+                if maintenance_future is not None and maintenance_future.done():
+                    finished_maintenance = maintenance_future
+                    maintenance_future = None
+                    try:
+                        finished_maintenance.result()
+                    except Exception as exc:  # noqa: BLE001 - keep unrelated dispatchers alive
+                        logger.warning(
+                            "maintenance_failed",
+                            extra={"error_type": type(exc).__name__},
+                        )
+                if maintenance_future is None and time.monotonic() - reconciled_at > 60:
+
+                    def maintenance():
+                        for action in (
+                            reconcile_abandoned_calls,
+                            reconcile_closed_spaces,
+                        ):
+                            try:
+                                action()
+                            except Exception as exc:  # noqa: BLE001 - independent maintenance failures
+                                logger.warning(
+                                    "maintenance_failed",
+                                    extra={"error_type": type(exc).__name__},
+                                )
+                        operational_status(update=True)
+
+                    maintenance_future = pool.submit(maintenance)
                     reconciled_at = time.monotonic()
                 if index_future is None or index_future.done():
                     if index_future is not None:
@@ -69,7 +97,9 @@ def main():
                 remove_heartbeat(worker_id)
                 break
             except Exception as exc:  # noqa: BLE001 - isolate failures at worker boundary
-                print(f"worker iteration failed: {type(exc).__name__}")
+                logger.warning(
+                    "worker_iteration_failed", extra={"error_type": type(exc).__name__}
+                )
                 time.sleep(5)
 
 

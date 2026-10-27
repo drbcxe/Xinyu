@@ -18,6 +18,11 @@ def get_engine() -> Engine:
         database_url,
         pool_pre_ping=True,
         hide_parameters=True,
+        connect_args={
+            "connect_timeout": get_settings().database_connect_timeout,
+            "options": f"-c statement_timeout={get_settings().database_statement_timeout_ms}",
+        },
+        pool_timeout=5,
     )
 
 

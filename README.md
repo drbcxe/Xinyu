@@ -75,5 +75,6 @@ pnpm dev
 - [账号注销、清理回执与反馈](./docs/account-closure-feedback.md)
 - [任务控制、用量与分页读取](./docs/task-controls.md)
 - [工程化完整范围与进度](./docs/enterprise-readiness.md)
+- [运行状态、日志与告警](./docs/observability.md)
 
 仓库：[drbcxe/Xinyu](https://github.com/drbcxe/Xinyu)。

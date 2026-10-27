@@ -31,7 +31,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         headers=headers,
         content={
             "error": {"code": exc.code, "message": exc.message, "details": exc.details},
-            "request_id": uuid4().hex,
+            "request_id": getattr(request.state, "request_id", None) or uuid4().hex,
         },
     )
 
@@ -56,6 +56,6 @@ async def validation_error_handler(
                 "message": "请求参数不符合要求",
                 "details": details,
             },
-            "request_id": uuid4().hex,
+            "request_id": getattr(request.state, "request_id", None) or uuid4().hex,
         },
     )

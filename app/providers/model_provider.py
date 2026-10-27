@@ -1,3 +1,4 @@
+import logging
 import time
 from collections.abc import Callable
 from functools import lru_cache
@@ -7,9 +8,11 @@ import httpx
 
 from app.config import get_settings
 from app.errors import AppError
+from app.services.observability import request_context
 from app.services.resource_control import (
     ensure_active,
     estimate_input,
+    operation_context,
     provider_slot,
     reserve_call,
     settle_call,
@@ -40,13 +43,36 @@ def controlled_post(
         try:
             ensure_active()
             sent = True
-            response = model_http_client().post(
+            with model_http_client().stream(
+                "POST",
                 base_url + "/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=httpx.Timeout(timeout, connect=min(10, timeout)),
-            )
-            rejected = 400 <= response.status_code < 500
+            ) as remote:
+                rejected = 400 <= remote.status_code < 500
+                raw = bytearray()
+                for chunk in remote.iter_bytes(chunk_size=16384):
+                    ensure_active()
+                    if time.monotonic() >= deadline:
+                        raise httpx.ReadTimeout("Model deadline exceeded")
+                    raw.extend(chunk)
+                    if len(raw) > 2 * 1024 * 1024:
+                        raise AppError(
+                            502,
+                            "MODEL_RESPONSE_TOO_LARGE",
+                            "模型返回超过响应上限，请缩小问题范围",
+                        )
+                response = httpx.Response(
+                    remote.status_code,
+                    headers={
+                        k: v
+                        for k, v in remote.headers.items()
+                        if k.lower() not in {"content-encoding", "content-length"}
+                    },
+                    content=bytes(raw),
+                    request=remote.request,
+                )
             if response.is_success:
                 try:
                     raw = response.json().get("usage")
@@ -64,6 +90,16 @@ def controlled_post(
             return response
         finally:
             settle_call(call_id, usage=usage, sent=sent, rejected=rejected)
+            current = operation_context.get()
+            logging.getLogger(__name__).info(
+                "model_completed",
+                extra={
+                    "request_id": request_context.get(),
+                    "job_id": current.job_id if current else None,
+                    "call_id": call_id,
+                    "purpose": current.purpose if current else None,
+                },
+            )
 
 
 def require_model_config(

@@ -266,6 +266,7 @@ def process_one() -> bool:
 
     thread = threading.Thread(target=heartbeat, name="job-lease", daemon=True)
     thread.start()
+    logger.info("job_started", extra={"job_id": job_id})
     try:
         check_current()
         with (
@@ -276,6 +277,7 @@ def process_one() -> bool:
                 "advice",
                 check_current,
                 lambda node, step: write_progress(job_id, lease_token, node, step),
+                job_id=job_id,
             ),
         ):
             result = run_agent(
@@ -328,6 +330,7 @@ def process_one() -> bool:
             job.lease_token, job.lease_expires_at = None, None
             job.updated_at = datetime.now(UTC)
             db.commit()
+            logger.info("job_finished", extra={"job_id": job_id})
     except Exception as exc:  # noqa: BLE001 - durable task boundary
         with Session(get_engine()) as db:
             job = db.scalar(

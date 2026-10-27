@@ -10,6 +10,8 @@ import psycopg
 import pytest
 from psycopg import sql
 from redis import Redis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from sqlalchemy.engine import make_url
 
 from app.config import PROJECT_ROOT, get_settings
@@ -33,7 +35,11 @@ def infrastructure():
     )
     redis_url = os.environ.get("XINYU_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
     cache = Redis.from_url(
-        redis_url, decode_responses=True, socket_connect_timeout=2, socket_timeout=2
+        redis_url,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+        retry=Retry(NoBackoff(), 0),
     )
     if cache.dbsize() != 0:
         pytest.fail(

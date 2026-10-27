@@ -47,8 +47,8 @@ jobs:
           python-version: '3.12'
           enable-cache: true
       - run: uv sync --locked
-      - run: uv run ruff check app scripts/worker.py tests
-      - run: uv run ruff format --check app scripts/worker.py tests
+      - run: uv run ruff check app scripts tests
+      - run: uv run ruff format --check app scripts tests
       - run: uv run python -m pytest tests -q --tb=short
 
   frontend:
