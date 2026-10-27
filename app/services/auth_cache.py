@@ -13,7 +13,9 @@ from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFont
 from redis import Redis
+from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
+from redis.retry import Retry
 
 from app.config import PROJECT_ROOT, get_settings
 from app.errors import AppError
@@ -45,6 +47,7 @@ def get_redis() -> Redis:
         socket_connect_timeout=1,
         socket_timeout=1,
         health_check_interval=30,
+        retry=Retry(NoBackoff(), 0),
     )
 
 

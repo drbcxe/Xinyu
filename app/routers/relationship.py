@@ -1,18 +1,17 @@
 """Account-scoped relationship workflows and optional channel setup."""
 
 import json
-import time
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
 
-from app.config import PROJECT_ROOT, get_settings
+from app.config import get_settings
 from app.errors import AppError
 from app.models.relationship import (
     RelationshipAccount,
@@ -32,11 +31,26 @@ from app.schemas.relationship import (
     ItemUpdate,
     ProfileInput,
 )
+from app.services.auth_cache import consume_rate
 from app.services.graph_checkpoints import clear_checkpoints
 from app.services.relationship_auth import Owner
 from app.services.relationship_jobs import enqueue, get_profile, job_data
 from app.services.relationship_rag import index_status, retrieve, schedule_index
+from app.services.relationship_reads import (
+    item_counts,
+    item_page,
+    jobs_summary,
+    presence,
+    snapshot_version,
+)
 from app.services.relationship_vision import transcribe
+from app.services.resource_control import (
+    admit_request,
+    check_storage,
+    local_operation_rate,
+    operation_scope,
+    usage_summary,
+)
 
 router = APIRouter(prefix="/relationship", tags=["relationship"])
 DB = Annotated[Session, Depends(get_db)]
@@ -87,22 +101,12 @@ def invalidate_notices(db, item_id):
 @router.get("/state")
 def state(db: DB, owner: Owner):
     profile = get_profile(db, owner)
+    version = snapshot_version(db, owner)
     turns = db.scalars(
         select(RelationshipTurn)
         .where(RelationshipTurn.owner == owner)
-        .order_by(RelationshipTurn.created_at.desc())
-        .limit(50)
-    ).all()
-    items = db.scalars(
-        select(RelationshipItem)
-        .where(RelationshipItem.owner == owner)
-        .order_by(RelationshipItem.created_at.desc())
-    ).all()
-    jobs = db.scalars(
-        select(RelationshipJob)
-        .where(RelationshipJob.owner == owner)
-        .order_by(RelationshipJob.created_at.desc())
-        .limit(12)
+        .order_by(RelationshipTurn.created_at.desc(), RelationshipTurn.id.desc())
+        .limit(21)
     ).all()
     notices = db.scalars(
         select(RelationshipNotice)
@@ -116,12 +120,13 @@ def state(db: DB, owner: Owner):
         select(RelationshipAccount).where(RelationshipAccount.owner == owner)
     )
     binding = db.get(RelationshipWeixinBinding, owner)
-    heartbeat = PROJECT_ROOT / ".runtime/workers/reminder.heartbeat"
     return {
+        "version": version,
         "profile": {"partner_name": profile.partner_name, "style": profile.style},
-        "turns": [turn_data(t) for t in reversed(turns)],
-        "items": [item_data(i) for i in items],
-        "jobs": [job_data(j) for j in jobs],
+        "turns": [turn_data(t) for t in reversed(turns[:20])],
+        "history_has_more": len(turns) > 20,
+        "item_counts": item_counts(db, owner),
+        "jobs": jobs_summary(db, owner),
         "notices": [
             {
                 k: getattr(n, k)
@@ -137,13 +142,22 @@ def state(db: DB, owner: Owner):
             for n in notices
         ],
         "account": {"username": account.username if account else None},
-        "worker_online": heartbeat.exists()
-        and time.time() - heartbeat.stat().st_mtime < 30,
+        "worker_online": presence(),
         "weixin": {
             "status": binding.status if binding else "not_connected",
             "interface_ready": True,
         },
         "supports_images": bool(get_settings().relationship_vision_model.strip()),
+        "server_time": datetime.now(UTC),
+    }
+
+
+@router.get("/state/summary")
+def state_summary(db: DB, owner: Owner):
+    return {
+        "version": snapshot_version(db, owner),
+        "jobs": jobs_summary(db, owner),
+        "worker_online": presence(),
         "server_time": datetime.now(UTC),
     }
 
@@ -160,18 +174,28 @@ def save_profile(payload: ProfileInput, db: DB, owner: Owner):
 
 
 @router.post("/transcribe")
-def image_transcript(payload: ImageInput, owner: Owner):
-    return {"transcript": transcribe(payload.images), "requires_confirmation": True}
+def image_transcript(payload: ImageInput, request: Request, db: DB, owner: Owner):
+    admit_request(db, owner, request.client.host if request.client else "local", "ocr")
+    db.commit()
+    db.rollback()
+    with operation_scope(owner, str(uuid4()), "ocr"):
+        result = transcribe(payload.images)
+    return {"transcript": result, "requires_confirmation": True}
 
 
 @router.post("/runs", status_code=202)
 @router.post("/chat", status_code=202)
-def start_run(payload: ChatInput, db: DB, owner: Owner):
+def start_run(payload: ChatInput, request: Request, db: DB, owner: Owner):
     if not payload.content.strip():
         raise AppError(422, "EMPTY_MESSAGE", "请输入聊天内容")
     return job_data(
         enqueue(
-            db, owner, str(payload.request_id), payload.content.strip(), payload.mode
+            db,
+            owner,
+            str(payload.request_id),
+            payload.content.strip(),
+            payload.mode,
+            ip_scope=request.client.host if request.client else "local",
         )
     )
 
@@ -186,7 +210,9 @@ def get_run(run_id: UUID, db: DB, owner: Owner):
 
 
 @router.post("/runs/{run_id}/retry")
-def retry_run(run_id: UUID, db: DB, owner: Owner):
+def retry_run(run_id: UUID, request: Request, db: DB, owner: Owner):
+    lock_owner(db, owner)
+    consume_rate("retry:" + owner, 10, 60, "任务重试过于频繁，请稍后再试")
     job = db.scalar(
         select(RelationshipJob)
         .where(RelationshipJob.id == str(run_id), RelationshipJob.owner == owner)
@@ -196,24 +222,124 @@ def retry_run(run_id: UUID, db: DB, owner: Owner):
         raise AppError(404, "RUN_NOT_FOUND", "任务不存在")
     if job.status != "failed":
         raise AppError(409, "RUN_NOT_FAILED", "只有失败任务可以重试")
+    settings = get_settings()
+    db.execute(text("SELECT pg_advisory_xact_lock(718302611)"))
+    mine = db.scalar(
+        select(func.count())
+        .select_from(RelationshipJob)
+        .where(
+            RelationshipJob.owner == owner,
+            RelationshipJob.status.in_(["queued", "running"]),
+        )
+    )
+    total = db.scalar(
+        select(func.count())
+        .select_from(RelationshipJob)
+        .where(RelationshipJob.status.in_(["queued", "running"]))
+    )
+    if mine >= settings.owner_pending_limit or total >= settings.global_queue_limit:
+        raise AppError(
+            429, "QUEUE_FULL", "请等待已有任务完成后重试", {"retry_after_seconds": 10}
+        )
+    admit_request(
+        db, owner, request.client.host if request.client else "local", "retry"
+    )
     job.status, job.error, job.updated_at = "queued", "", datetime.now(UTC)
+    job.cancel_requested, job.available_at = False, datetime.now(UTC)
+    job.lease_token, job.lease_expires_at = None, None
     db.commit()
     return job_data(job)
 
 
+@router.post("/runs/{run_id}/cancel")
+def cancel_run(run_id: UUID, db: DB, owner: Owner):
+    lock_owner(db, owner)
+    job = db.scalar(
+        select(RelationshipJob)
+        .where(RelationshipJob.id == str(run_id), RelationshipJob.owner == owner)
+        .with_for_update()
+    )
+    if not job:
+        raise AppError(404, "RUN_NOT_FOUND", "任务不存在")
+    if job.status in {"queued", "running"}:
+        job.cancel_requested, job.status, job.error = (
+            True,
+            "cancelled",
+            "任务已取消；已发出的模型请求可能仍产生用量",
+        )
+        job.lease_token, job.lease_expires_at, job.updated_at = (
+            None,
+            None,
+            datetime.now(UTC),
+        )
+        db.commit()
+    return job_data(job)
+
+
+@router.get("/usage")
+def usage(db: DB, owner: Owner):
+    return usage_summary(db, owner)
+
+
 @router.get("/history")
-def history(db: DB, owner: Owner, before: Annotated[datetime | None, Query()] = None):
+def history(
+    db: DB,
+    owner: Owner,
+    before: Annotated[datetime | None, Query()] = None,
+    before_id: UUID | None = None,
+):
     query = select(RelationshipTurn).where(RelationshipTurn.owner == owner)
     if before:
-        query = query.where(RelationshipTurn.created_at < before)
+        query = (
+            query.where(
+                tuple_(RelationshipTurn.created_at, RelationshipTurn.id)
+                < (before, str(before_id))
+            )
+            if before_id
+            else query.where(RelationshipTurn.created_at < before)
+        )
     return [
         turn_data(t)
         for t in reversed(
             db.scalars(
-                query.order_by(RelationshipTurn.created_at.desc()).limit(50)
+                query.order_by(
+                    RelationshipTurn.created_at.desc(), RelationshipTurn.id.desc()
+                ).limit(50)
             ).all()
         )
     ]
+
+
+@router.get("/items")
+def list_items(
+    db: DB,
+    owner: Owner,
+    kind: Literal["memory", "reminder", "date_plan", "chat_log"],
+    cursor: str | None = Query(default=None, max_length=1000),
+    limit: int = Query(default=40, ge=1, le=100),
+    q: str = Query(default="", max_length=200),
+    status: Literal["all", "active", "completed", "cancelled"] = "all",
+):
+    return item_page(db, owner, kind, cursor, limit, q, status)
+
+
+@router.get("/items/{item_id}/content")
+def item_content(item_id: UUID, request: Request, db: DB, owner: Owner):
+    local_operation_rate(
+        owner, request.client.host if request.client else "local", "read-content", 30
+    )
+    item = db.scalar(
+        select(RelationshipItem).where(
+            RelationshipItem.id == str(item_id), RelationshipItem.owner == owner
+        )
+    )
+    if not item or item.kind != "chat_log":
+        raise AppError(404, "ITEM_NOT_FOUND", "资料不存在")
+    return {
+        "id": item.id,
+        "title": item.title,
+        "text": str(item.details.get("text", "")),
+    }
 
 
 @router.post("/items")
@@ -252,6 +378,16 @@ def create_item(payload: ItemInput, db: DB, owner: Owner):
             return item_data(existing)
     elif payload.kind == "date_plan":
         raise AppError(422, "PLAN_SOURCE_REQUIRED", "请从规划结果中保存约会方案")
+    check_storage(
+        db,
+        owner,
+        added_bytes=len(
+            json.dumps(
+                {"title": payload.title, "quote": payload.quote, "details": details}
+            ).encode()
+        ),
+        added_items=1,
+    )
     item = RelationshipItem(
         id=str(uuid4()),
         owner=owner,
@@ -273,6 +409,7 @@ def create_item(payload: ItemInput, db: DB, owner: Owner):
 
 @router.put("/items/{item_id}")
 def update_item(item_id: UUID, payload: ItemUpdate, db: DB, owner: Owner):
+    lock_owner(db, owner)
     item = db.scalar(
         select(RelationshipItem)
         .where(RelationshipItem.id == str(item_id), RelationshipItem.owner == owner)
@@ -282,6 +419,11 @@ def update_item(item_id: UUID, payload: ItemUpdate, db: DB, owner: Owner):
         raise AppError(404, "ITEM_NOT_FOUND", "事项不存在")
     if not payload.title.strip():
         raise AppError(422, "EMPTY_TITLE", "内容不能为空")
+    check_storage(
+        db,
+        owner,
+        added_bytes=max(0, len(payload.title.encode()) - len(item.title.encode())),
+    )
     if item.kind == "reminder" and not payload.due_at:
         raise AppError(422, "MISSING_DUE_TIME", "提醒时间不能为空")
     if (
@@ -302,6 +444,7 @@ def update_item(item_id: UUID, payload: ItemUpdate, db: DB, owner: Owner):
 
 @router.delete("/items/{item_id}")
 def delete_item(item_id: UUID, db: DB, owner: Owner):
+    lock_owner(db, owner)
     item = db.scalar(
         select(RelationshipItem)
         .where(RelationshipItem.id == str(item_id), RelationshipItem.owner == owner)
@@ -339,7 +482,13 @@ def retry_notice(notice_id: UUID, db: DB, owner: Owner):
 
 
 @router.post("/imports")
-async def import_chat(db: DB, owner: Owner, file: Annotated[UploadFile, File()]):
+async def import_chat(
+    request: Request, db: DB, owner: Owner, file: Annotated[UploadFile, File()]
+):
+    local_operation_rate(
+        owner, request.client.host if request.client else "local", "imports", 10
+    )
+    lock_owner(db, owner)
     raw = await file.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024:
         raise AppError(413, "IMPORT_TOO_LARGE", "单个聊天文件最大 1 MB")
@@ -349,12 +498,21 @@ async def import_chat(db: DB, owner: Owner, file: Annotated[UploadFile, File()])
         text = raw.decode("utf-8-sig")
         if (file.filename or "").lower().endswith(".json"):
             text = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
-    except (UnicodeError, ValueError):
+    except (UnicodeError, ValueError, RecursionError):
         raise AppError(
             422, "IMPORT_INVALID", "文件不是有效的 UTF-8 文本或 JSON"
         ) from None
     if not text.strip():
         raise AppError(422, "IMPORT_EMPTY", "文件内容为空")
+    if len(text.encode()) > 1024 * 1024:
+        raise AppError(413, "IMPORT_TOO_LARGE", "展开后的聊天文本最大 1 MB")
+    check_storage(
+        db,
+        owner,
+        added_bytes=len(json.dumps({"text": text}).encode())
+        + len((file.filename or "聊天记录").encode()),
+        added_items=1,
+    )
     item = RelationshipItem(
         id=str(uuid4()),
         owner=owner,
@@ -404,13 +562,19 @@ def knowledge(db: DB, owner: Owner):
 
 
 @router.post("/knowledge/search")
-def knowledge_search(payload: RetrievalInput, db: DB, owner: Owner):
+def knowledge_search(payload: RetrievalInput, request: Request, db: DB, owner: Owner):
+    local_operation_rate(
+        owner, request.client.host if request.client else "local", "search", 30
+    )
     # Retrieval preview stays local and does not consume a generation-model call.
     return retrieve(db, owner, payload.query, top_k=8, rerank=False)
 
 
 @router.post("/knowledge/reindex")
-def knowledge_reindex(db: DB, owner: Owner):
+def knowledge_reindex(request: Request, db: DB, owner: Owner):
+    local_operation_rate(
+        owner, request.client.host if request.client else "local", "reindex", 2, 300
+    )
     lock_owner(db, owner)
     count = 0
     for item in db.scalars(
@@ -427,7 +591,10 @@ def knowledge_reindex(db: DB, owner: Owner):
 
 
 @router.post("/knowledge/{item_id}/retry")
-def retry_index(item_id: UUID, db: DB, owner: Owner):
+def retry_index(item_id: UUID, request: Request, db: DB, owner: Owner):
+    local_operation_rate(
+        owner, request.client.host if request.client else "local", "index-retry", 10
+    )
     job = db.scalar(
         select(RelationshipRagIndex)
         .where(

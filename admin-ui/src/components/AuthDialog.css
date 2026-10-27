@@ -78,3 +78,4 @@
 .auth-footer span { font-size: 10px; color: #b1a4bd; }
 .auth-dialog .auth-logout { font-size: 11px; padding: 8px 12px; color: #b67d8a; background: #fdf6f8; border: 1px solid #f1e1e7; border-radius: 8px; }
 @media(max-width: 560px) { .love-modal.auth-dialog { padding: 26px 22px; max-height: calc(100dvh - 32px); } .auth-heading { padding-left: 0; padding-right: 18px; } .auth-brand-icon { position: static; margin-bottom: 10px; width: 36px; height: 36px; border-radius: 11px; } .auth-dialog .auth-heading h2 { font-size: 24px; } .auth-captcha-row { grid-template-columns: 1fr 125px; gap: 8px; } .auth-security-summary { flex-wrap: wrap; } .auth-security-summary button { margin-left: 37px; } .auth-event-list small { display: block; margin: 3px 0 0; } .auth-footer { align-items: flex-start; flex-direction: column; } }
+.auth-email-panel .auth-submit { margin-top: 16px; }

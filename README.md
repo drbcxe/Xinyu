@@ -13,6 +13,8 @@
 - 输入区域、时间、预算与限制，结合偏好生成约会参考方案并保存。
 - 注册账号保留访客记录，在连接同一后端的其他设备登录使用。
 - 一次性图形验证码、登录失败锁定、登录设备管理、修改密码和最近安全动态。
+- 绑定已验证邮箱、SMTP 后台发送验证码、通过邮箱重置密码并撤销旧会话。
+- 取消任务、故障退避重试、用量预算展示；列表分页和按需查看聊天原文。
 - 主动导入 UTF-8 TXT/JSON 聊天，或导出本空间的数据。
 - 用语义与关键词混合检索找回偏好、聊天原文，查看索引状态与回答来源。
 - 查看 LangGraph 实际执行步骤，失败任务可基于 PostgreSQL 检查点恢复。
@@ -26,7 +28,7 @@
 - Agent：LangGraph 状态图、条件工具循环、Pydantic 结构校验、PostgreSQL 检查点恢复。
 - RAG：LangChain 中文分块、本地 FastEmbed/BGE 中文向量、Qdrant、BM25、RRF 融合与 GLM 语义重排。
 - 后台：独立 Worker 与 PostgreSQL 持久任务队列、提醒收件箱。
-- 账号：scrypt 密码哈希、随机 HttpOnly/SameSite 会话；Redis 提供验证码、限流、失败锁定与会话缓存/撤销；当前不提供邮箱或短信找回。
+- 账号：scrypt 密码哈希、随机 HttpOnly/SameSite 会话；Redis 验证码、限流、失败锁定与会话撤销；SMTP 验证邮箱与密码找回。
 
 ## 启动
 
@@ -68,5 +70,8 @@ pnpm dev
 - [数据库升级与归档](./docs/database-upgrades.md)
 - [账号验证与 Redis](./docs/account-security.md)
 - [RAG、向量检索与 LangGraph](./docs/rag-langgraph.md)
+- [邮箱绑定与密码找回](./docs/email-recovery.md)
+- [任务控制、用量与分页读取](./docs/task-controls.md)
+- [工程化完整范围与进度](./docs/enterprise-readiness.md)
 
 仓库：[drbcxe/Xinyu](https://github.com/drbcxe/Xinyu)。

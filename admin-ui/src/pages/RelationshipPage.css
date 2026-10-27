@@ -252,3 +252,9 @@
   .love-user { margin-left: 5%; padding: 16px 18px; }.love-answer { padding: 0; }.love-modal-backdrop { padding: 16px; }.love-modal { padding: 25px; border-radius: 17px; max-height: 85vh; }.love-modal-actions { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { .love-app * { transition: none !important; }.love-app .love-starters button:hover { transform: none; } }
+.love-usage-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 20px 0; }
+.love-usage-meters label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
+.love-usage-meters strong { color: #6c4d91; font-variant-numeric: tabular-nums; }
+.love-usage-meters progress { width: 100%; height: 9px; accent-color: #9b75bd; }
+.love-usage small { display: block; color: #81788e; line-height: 1.8; margin: 12px 0; }
+@media (max-width: 600px) { .love-usage-meters { grid-template-columns: 1fr; gap: 16px; } }

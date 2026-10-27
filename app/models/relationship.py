@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -49,6 +59,10 @@ class RelationshipAccount(Base):
     owner: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    email: Mapped[str | None] = mapped_column(String(254), unique=True, nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class RelationshipSession(Base):
@@ -83,7 +97,10 @@ class RelationshipLoginLimit(Base):
 
 class RelationshipJob(Base):
     __tablename__ = "relationship_jobs"
-    __table_args__ = (UniqueConstraint("owner", "request_id"),)
+    __table_args__ = (
+        UniqueConstraint("owner", "request_id"),
+        Index("ix_relationship_jobs_dispatch", "status", "available_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     owner: Mapped[str] = mapped_column(String(64), index=True)
     request_id: Mapped[str] = mapped_column(String(36))
@@ -94,6 +111,14 @@ class RelationshipJob(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    cancel_requested: Mapped[bool] = mapped_column(default=False)
 
 
 class RelationshipNotice(Base):
@@ -136,3 +161,65 @@ class RelationshipRagIndex(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(String(300), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipDailyUsage(Base):
+    __tablename__ = "relationship_daily_usage"
+    scope: Mapped[str] = mapped_column(String(80), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    charged_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class RelationshipModelCall(Base):
+    __tablename__ = "relationship_model_calls"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    operation_id: Mapped[str] = mapped_column(String(80), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(150))
+    day: Mapped[str] = mapped_column(String(10))
+    reserved_tokens: Mapped[int] = mapped_column(Integer)
+    charged_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20))
+    usage_reported: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RelationshipEmailChallenge(Base):
+    __tablename__ = "relationship_email_challenges"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    binding: Mapped[str] = mapped_column(String(64))
+    purpose: Mapped[str] = mapped_column(String(20))
+    email: Mapped[str] = mapped_column(String(254))
+    answer_hash: Mapped[str] = mapped_column(String(64))
+    password_version: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RelationshipEmailOutbox(Base):
+    __tablename__ = "relationship_email_outbox"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    encrypted_payload: Mapped[str] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.config import PROJECT_ROOT
 from app.errors import AppError, app_error_handler, validation_error_handler
+from app.routers.account_email import router as account_email_router
 from app.routers.health import router as health_router
 from app.routers.relationship import router as relationship_router
 from app.services.relationship_auth import router as relationship_auth_router
@@ -22,6 +23,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         tempfile.tempdir = previous_temp
+        from app.providers.model_provider import model_http_client
+
+        if model_http_client.cache_info().currsize:
+            model_http_client().close()
+            model_http_client.cache_clear()
 
 
 app = FastAPI(
@@ -37,3 +43,4 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.include_router(health_router, prefix="/api")
 app.include_router(relationship_router, prefix="/api")
 app.include_router(relationship_auth_router, prefix="/api")
+app.include_router(account_email_router, prefix="/api")

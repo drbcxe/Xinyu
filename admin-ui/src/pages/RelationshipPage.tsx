@@ -4,9 +4,11 @@ import { NavLink, useLocation } from 'react-router'
 import ReactMarkdown from 'react-markdown'
 import Icon from '../components/Icon'
 import AuthDialog from '../components/AuthDialog'
+import UsagePanel from '../components/UsagePanel'
 import KnowledgePanel, { SourceCards } from '../components/KnowledgePanel'
 import { api, localDate, toolNames } from '../relationshipApi'
 import type { Candidate, Item, Job, Plan, State, Turn } from '../relationshipApi'
+import useItemPage from '../useItemPage'
 import './RelationshipPage.css'
 
 type Draft = { kind: 'memory' | 'reminder'; title: string; quote: string; due_at: string; source_turn_id?: string; id?: string }
@@ -27,32 +29,60 @@ export default function RelationshipPage() {
   const [clearConfirm, setClearConfirm] = useState(false)
   const [older, setOlder] = useState<Turn[]>([])
   const [hasOlder, setHasOlder] = useState(true)
+  const olderLoaded = useRef(false)
+  const identity = useRef<string | null | undefined>(undefined)
   const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null)
   const [images, setImages] = useState<{ name: string; url: string }[]>([])
   const [transcript, setTranscript] = useState<string | null>(null)
+  const [rawDocument, setRawDocument] = useState<{ title: string; text: string } | null>(null)
   const [planForm, setPlanForm] = useState({ city: '', budget: '', when: '', preferences: '' })
   const [memoryQuery, setMemoryQuery] = useState('')
   const [itemFilter, setItemFilter] = useState('all')
   const endRef = useRef<HTMLDivElement>(null)
   const requestKey = useRef<string | null>(null)
   const notified = useRef(new Set<string>())
-  const modalOpen = Boolean(draft || authMode || transcript !== null)
+  const modalOpen = Boolean(draft || authMode || transcript !== null || rawDocument)
+  const stateVersion = useRef<string | null>(null)
+  const refreshing = useRef(false)
+  const collectionKind = tab === 'memories' ? 'memory' : tab === 'reminders' ? 'reminder' : tab === 'dates' ? 'date_plan' : tab === 'settings' ? 'chat_log' : null
+  const collection = useItemPage(collectionKind, state?.version, tab === 'memories' ? memoryQuery : '', tab === 'reminders' ? itemFilter : 'all')
   const refresh = useCallback(async () => {
     const next = await api<State>('/state')
+    if (identity.current !== undefined && identity.current !== next.account.username) {
+      setOlder([]); olderLoaded.current = false; setRawDocument(null); setTranscript(null); setDraft(null); setText(''); setImages([])
+    }
+    identity.current = next.account.username
+    if (!next.turns.length) { setOlder([]); olderLoaded.current = false }
+    if (!olderLoaded.current) setHasOlder(next.history_has_more)
+    stateVersion.current = next.version
     setState(next)
     return next
   }, [])
   const reloadSpace = useCallback(async () => {
     const next = await refresh()
-    setProfile(next.profile); setOlder([]); setHasOlder(true)
+    olderLoaded.current = false
+    setProfile(next.profile); setOlder([]); setHasOlder(next.history_has_more)
     setText(''); setImages([]); setDraft(null); requestKey.current = null
   }, [refresh])
 
   useEffect(() => {
     let active = true
-    api<State>('/state').then(next => { if (active) { setState(next); setProfile(next.profile) } }).catch(err => { if (active) setError(err.message) })
-    const timer = setInterval(() => { void refresh().catch(() => {}) }, 3000)
-    return () => { active = false; clearInterval(timer) }
+    api<State>('/state').then(next => { if (active) { identity.current = next.account.username; stateVersion.current = next.version; setState(next); setProfile(next.profile); setHasOlder(next.history_has_more) } }).catch(err => { if (active) setError(err.message) })
+    const poll = async () => {
+      if (!active || refreshing.current || document.hidden) return
+      refreshing.current = true
+      try {
+        const summary = await api<Pick<State, 'version' | 'jobs' | 'worker_online' | 'server_time'>>('/state/summary')
+        if (!active) return
+        if (summary.version !== stateVersion.current) await refresh()
+        else setState(previous => previous ? { ...previous, jobs: summary.jobs, worker_online: summary.worker_online, server_time: summary.server_time } : previous)
+      } catch { /* The next bounded poll retries; existing content stays visible. */ }
+      finally { refreshing.current = false }
+    }
+    const timer = setInterval(() => { void poll() }, 3000)
+    const visible = () => { if (!document.hidden) void poll() }
+    document.addEventListener('visibilitychange', visible)
+    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
   }, [refresh])
   useEffect(() => { document.title = `${labels[tab]} · 心语 Xinyu` }, [tab])
   useEffect(() => {
@@ -61,7 +91,7 @@ export default function RelationshipPage() {
     const dialog = document.querySelector<HTMLElement>('.love-modal')
     const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]') ?? [])
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) { setDraft(null); setAuthMode(null); setTranscript(null) }
+      if (event.key === 'Escape' && !saving) { setDraft(null); setAuthMode(null); setTranscript(null); setRawDocument(null) }
       if (event.key !== 'Tab') return
       const elements = focusable(); const first = elements[0]; const last = elements.at(-1)
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
@@ -177,16 +207,16 @@ export default function RelationshipPage() {
     await task(async () => {
       const first = allTurns[0]
       if (!first) return
-      const rows = await api<Turn[]>(`/history?before=${encodeURIComponent(first.created_at)}`)
+      const rows = await api<Turn[]>(`/history?before=${encodeURIComponent(first.created_at)}&before_id=${encodeURIComponent(first.id)}`)
+      olderLoaded.current = true
       setOlder(current => [...rows, ...current]); setHasOlder(rows.length === 50)
     })
   }
 
-  const memories = state?.items.filter(item => item.kind === 'memory' && item.title.includes(memoryQuery)) ?? []
-  const items = tab === 'memories' ? memories : state?.items.filter(item => item.kind === 'reminder' && (itemFilter === 'all' || item.status === itemFilter)) ?? []
+  const items = collection.items
   const dateTurns = allTurns.filter(turn => !!turn.result.date_plans?.length)
-  const plans = state?.items.filter(item => item.kind === 'date_plan') ?? []
-  const imports = state?.items.filter(item => item.kind === 'chat_log') ?? []
+  const plans = collection.items
+  const imports = collection.items
 
   return <div className={`love-app love-view-${tab}`}>
     <aside className="love-sidebar">
@@ -207,6 +237,8 @@ export default function RelationshipPage() {
       <div className="love-content">
         {error && <div className="love-alert" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}
         {notice && <div className="love-notice" role="status">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
+        {collectionKind && collection.error && <div className="love-alert" role="alert">{collection.error}</div>}
+        {collectionKind && collection.loading && <p className="knowledge-caption" role="status">正在读取资料…</p>}
         {state && !state.worker_online && <div className="love-alert">后台任务未启动，分析和到期提醒暂时不会执行。请启动 scripts/worker.py。</div>}
         {!!unread.length && tab !== 'reminders' && <NavLink className="love-due" to="/assistant/reminders">◷ 有 {unread.length} 条未读提醒：{unread[0].title}</NavLink>}
         {!state && <div className="love-empty"><p>正在连接你的空间…</p><button onClick={() => { void reloadSpace().catch(err => setError(err.message)) }}>重新连接</button></div>}
@@ -216,7 +248,7 @@ export default function RelationshipPage() {
           {!allTurns.length && <section className="love-welcome"><div className="love-hero-main"><div className="love-hero-copy"><div className="love-hero-pill"><Icon name="spark" />为真实的关系，多想一步</div><h1>好好沟通，<br /><span>从这里开始。</span></h1><p>一起读懂聊天里的在意，<br />找到自然的表达，记住值得用心的小事。</p></div><div className="love-hero-art" aria-hidden="true"><div className="love-art-orbit" /><div className="love-art-orbit second" /><div className="love-art-heart"><Icon name="heart" /></div><span className="love-art-chip first"><Icon name="chat" />理解语境</span><span className="love-art-chip second"><Icon name="memory" />记住偏好</span><i className="love-art-dot one" /><i className="love-art-dot two" /></div></div><div className="love-starters">{[{ title: '这句话，怎么回？', detail: '理清语境，找到自然表达', icon: 'chat' as const, value: '帮我看看这段聊天，怎么回复更自然？' }, { title: '把误会，好好说开', detail: '理解分歧，表达真实想法', icon: 'heart' as const, value: '我想解释一次误会，但不知道怎么开口。' }, { title: '重要的事，别忘了', detail: '记下约定，把关心放进行动', icon: 'bell' as const, value: '她下周有重要面试，我想记下来。' }].map(item => <button key={item.title} onClick={() => { setText(item.value); requestKey.current = null }}><span className="love-starter-icon"><Icon name={item.icon} /></span><strong>{item.title}</strong><small>{item.detail}</small><Icon name="arrow" /></button>)}</div></section>}
           {!!allTurns.length && hasOlder && <button className="love-load-more" disabled={saving} onClick={() => void loadOlder()}>加载更早的咨询</button>}
           <div className="love-conversation" aria-live="polite">{allTurns.map(renderTurn)}</div>
-          {state.jobs.filter(job => job.status !== 'succeeded').slice(0, 4).map(job => <div className={`love-job ${job.status}`} key={job.id}><span>{job.status === 'queued' ? '◷ 等待后台处理' : job.status === 'running' ? '✦ 正在读取背景、调用工具并整理建议…' : job.error}</span>{job.status === 'failed' && <button disabled={saving} onClick={() => void task(async () => { await api(`/runs/${job.id}/retry`, 'POST'); await refresh() })}>重试</button>}</div>)}
+          {state.jobs.filter(job => job.status !== 'succeeded').slice(0, 4).map(job => <div className={`love-job ${job.status}`} key={job.id}><span>{job.status === 'queued' ? job.error ? `◷ 正在等待重试：${job.error}` : '◷ 等待后台处理' : job.status === 'running' ? `✦ ${graphLabels[job.progress?.node ?? ''] ?? '准备执行'}${job.progress?.model_step ? ` · 第 ${job.progress.model_step} 轮模型调用` : ''}…` : job.error}</span>{(job.status === 'queued' || job.status === 'running') && <button disabled={saving} onClick={() => void task(async () => { await api(`/runs/${job.id}/cancel`, 'POST'); await refresh(); setNotice('已取消。已经发出的模型请求可能仍产生用量。') })}>取消任务</button>}{job.status === 'failed' && <button disabled={saving} onClick={() => void task(async () => { await api(`/runs/${job.id}/retry`, 'POST'); await refresh() })}>重试</button>}</div>)}
           <div ref={endRef} />
           <form className={`love-composer${allTurns.length ? ' has-history' : ''}`} onSubmit={event => { event.preventDefault(); void send(text) }}>
             <div className="love-composer-heading"><Icon name="spark" /><span>说说发生了什么</span><small>你的私人沟通助手</small></div><label htmlFor="love-input" className="love-sr-only">聊天内容</label><textarea id="love-input" rows={3} value={text} disabled={busy} maxLength={16000} onChange={event => { setText(event.target.value); requestKey.current = null }} placeholder="粘贴你们的聊天，标注「我 / 对方」，或直接告诉我你的困惑…" />
@@ -227,7 +259,7 @@ export default function RelationshipPage() {
 
         {state && (tab === 'memories' || tab === 'reminders') && <section className="love-library">
           <div className="love-section-head"><div><div className="love-eyebrow">{tab === 'memories' ? 'THE LITTLE THINGS MATTER' : 'MAKE ROOM FOR WHAT MATTERS'}</div><h1>{tab === 'memories' ? '关于 TA 的小事。' : '把在意，放进行动。'}</h1><p>{tab === 'memories' ? '已确认的偏好会参与相关性检索。随时纠正，也可以删除。' : '后台生成提醒并保留记录；系统通知需打开页面，微信需另行授权。'}</p></div><button className="love-primary" onClick={() => { setError(''); setDraft({ kind: tab === 'memories' ? 'memory' : 'reminder', title: '', quote: '', due_at: '' }) }}>＋ {tab === 'memories' ? '添加记忆' : '添加事项'}</button></div>
-          {tab === 'memories' && <><div className="love-memory-summary"><div><Icon name="heart" /><strong>{state.items.filter(item => item.kind === 'memory').length}</strong><span>已确认的偏好</span></div><div><Icon name="chat" /><strong>{state.items.filter(item => item.kind === 'memory' && item.source_turn_id).length}</strong><span>从聊天中记住</span></div><div><Icon name="shield" /><strong>由你掌控</strong><span>随时修改或删除</span></div></div><div className="love-search-wrap"><Icon name="search" /><input className="love-search" aria-label="搜索偏好" placeholder="搜索已确认偏好…" value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} /></div></>}
+          {tab === 'memories' && <><div className="love-memory-summary"><div><Icon name="heart" /><strong>{state.item_counts.memory ?? 0}</strong><span>已确认的偏好</span></div><div><Icon name="chat" /><strong>{state.item_counts.memories_from_chat ?? 0}</strong><span>从聊天中记住</span></div><div><Icon name="shield" /><strong>由你掌控</strong><span>随时修改或删除</span></div></div><div className="love-search-wrap"><Icon name="search" /><input maxLength={200} className="love-search" aria-label="搜索偏好" placeholder="搜索已确认偏好…" value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} /></div></>}
           {tab === 'reminders' && <div className="love-inbox"><h2>提醒收件箱</h2>{!state.notices.length && <p>到期后，后台会在这里生成提醒记录。</p>}{state.notices.map(message => <article key={message.id}><div><strong>{message.title}</strong><small>{new Date(message.created_at).toLocaleString('zh-CN')} · {message.status === 'unread' ? '未读' : '已读'} · 微信：{({ not_connected: '未连接', accepted: '平台已接受', needs_activity: '需要重新互动', uncertain: '投递结果不确定' } as Record<string, string>)[message.weixin_status] ?? message.weixin_status}</small>{message.error && <p>{message.error}</p>}</div>{message.status === 'unread' && <button disabled={saving} onClick={() => void task(async () => { await api(`/notices/${message.id}/read`, 'POST'); await refresh() })}>已读</button>}{state.weixin.status === 'connected' && ['needs_activity', 'uncertain'].includes(message.weixin_status) && <button disabled={saving} onClick={() => void task(async () => { await api(`/notices/${message.id}/retry`, 'POST'); await refresh() })}>重试微信</button>}</article>)}</div>}
           {tab === 'reminders' && <div className="love-filter-tabs" aria-label="事项状态筛选">{[{ value: 'all', label: '全部事项' }, { value: 'active', label: '待跟进' }, { value: 'completed', label: '已完成' }, { value: 'cancelled', label: '已取消' }].map(filter => <button key={filter.value} className={itemFilter === filter.value ? 'selected' : ''} aria-pressed={itemFilter === filter.value} onClick={() => setItemFilter(filter.value)}>{filter.label}</button>)}</div>}
           {!items.length ? <div className="love-empty"><span className="love-empty-icon"><Icon name={tab === 'memories' ? 'heart' : 'calendar'} /></span><h3>{tab === 'memories' ? '值得记住的小事，都在这里。' : '给重要的事，留个位置。'}</h3><p>{tab === 'memories' ? '还没有匹配的偏好，可以从咨询中确认，也可以手动添加。' : '当前筛选下还没有事项。添加一个提醒，把关心落到行动。'}</p></div> : <div className="love-item-grid">{items.map(item => <article className={`love-item ${item.status}`} key={item.id}><div className="love-item-meta"><span>{item.kind === 'memory' ? '已确认记忆' : item.due_at ? new Date(item.due_at).toLocaleString('zh-CN') : ''}</span><small>{{ active: '有效', completed: '已完成', cancelled: '已取消' }[item.status]}</small></div><h2>{item.title}</h2>{item.quote && <blockquote>“{item.quote}”</blockquote>}<small>{item.source_turn_id ? '来源：你提供或核对的聊天文字' : '来源：手动添加'} · 修订 {item.revision}</small><div className="love-item-actions"><button disabled={saving} onClick={() => { setError(''); setDraft({ kind: item.kind as 'memory' | 'reminder', title: item.title, quote: item.quote, id: item.id, source_turn_id: item.source_turn_id ?? undefined, due_at: localDate(item.due_at) }) }}>编辑{item.kind === 'reminder' ? ' / 改期' : ''}</button>{item.kind === 'reminder' && item.status === 'active' && <><button disabled={saving} onClick={() => void changeItem(item, 'completed')}>完成</button><button disabled={saving} onClick={() => void changeItem(item, 'cancelled')}>取消</button></>}<button disabled={saving} onClick={() => void changeItem(item, 'delete')}>删除</button></div></article>)}</div>}
@@ -251,19 +283,22 @@ export default function RelationshipPage() {
 
         {state && tab === 'settings' && <section className="love-settings">
           <div className="love-eyebrow">MAKE IT FEEL LIKE YOU</div><h1>让建议，更像你。</h1>
+          <UsagePanel />
           <form onSubmit={event => { event.preventDefault(); void task(async () => { await api('/profile', 'PUT', profile); await refresh(); setNotice('偏好已保存，下一轮生效。') }) }}><label>伴侣称呼<input required maxLength={80} value={profile.partner_name} onChange={event => setProfile({ ...profile, partner_name: event.target.value })} /></label><label>你希望怎样表达<textarea required maxLength={500} rows={4} value={profile.style} onChange={event => setProfile({ ...profile, style: event.target.value })} /></label><button className="love-primary" disabled={saving}>保存偏好</button></form>
           <div className="love-settings-note"><h2>账号与数据</h2><p>{state.account.username ? `当前账号：${state.account.username}。在其他设备登录同一后端的账号，即可打开同一空间。` : '当前为访客空间。注册账号会保留当前记录；在其他设备登录后可访问同一空间。'}</p><button disabled={busy} onClick={() => setAuthMode('register')}>{state.account.username ? '管理账号' : '注册 / 登录'}</button><a className="love-export" href="/api/relationship/export" download>导出我的数据</a></div>
-          <div className="love-settings-note"><h2>聊天记录导入</h2><p>主动上传 UTF-8 的 TXT 或 JSON 文件（最大 1 MB），咨询时可让助手检索其中的内容。不会自动读取其他微信窗口。</p><label className="love-upload">＋ 导入聊天文件<input hidden type="file" accept=".txt,.json" disabled={saving} onChange={event => { const file = event.target.files?.[0]; if (file) void task(async () => { const form = new FormData(); form.append('file', file); await api('/imports', 'POST', form); await refresh(); setNotice('已导入，可以在聊天中提问“根据导入的聊天……”') }); event.target.value = '' }} /></label>{imports.map(file => <div className="love-import-row" key={file.id}><span>{file.title}</span><button disabled={saving} onClick={() => void changeItem(file, 'delete')}>删除</button></div>)}</div>
+          <div className="love-settings-note"><h2>聊天记录导入</h2><p>主动上传 UTF-8 的 TXT 或 JSON 文件（最大 1 MB），咨询时可让助手检索其中的内容。不会自动读取其他微信窗口。</p><label className="love-upload">＋ 导入聊天文件<input hidden type="file" accept=".txt,.json" disabled={saving} onChange={event => { const file = event.target.files?.[0]; if (file) void task(async () => { const form = new FormData(); form.append('file', file); await api('/imports', 'POST', form); await refresh(); setNotice('已导入，可以在聊天中提问“根据导入的聊天……”') }); event.target.value = '' }} /></label>{imports.map(file => <div className="love-import-row" key={file.id}><span>{file.title}</span><button disabled={saving} onClick={() => void task(async () => { setRawDocument(await api<{ title: string; text: string }>(`/items/${file.id}/content`)) })}>查看原文</button><button disabled={saving} onClick={() => void changeItem(file, 'delete')}>删除</button></div>)}</div>
           <div className="love-settings-note"><h2>后台提醒与通知</h2><p>{state.worker_online ? '后台任务在线。即使关闭网页，到期提醒也会生成并保存。' : '后台任务离线，请启动 Worker。'}系统通知需要打开页面；关闭页面后的外部推送需连接微信。</p><button onClick={() => { if (!('Notification' in window)) { setError('当前浏览器不支持系统通知'); return } void Notification.requestPermission().then(permission => { if (permission === 'granted') { localStorage.setItem('xinyu-notifications', 'enabled'); setNotice('已开启当前浏览器的系统通知。') } else setNotice('未开启系统通知，仍可在提醒收件箱查看。') }) }}>开启本浏览器通知</button></div>
           <div className="love-settings-note"><h2>截图与微信</h2><p>{state.supports_images ? '视觉模型已配置。先识别并核对文字，再提交分析。' : '视觉模型尚未配置或额度待处理。请在本地 .env 配置 RELATIONSHIP_VISION_MODEL；可另配视觉服务地址和 Key。'}</p><p>个人微信接口已准备，当前{state.weixin.status === 'connected' ? '已授权' : '尚未授权'}。按当前开发范围，本轮只完成网页与接口准备。微信消息发送还需真实账号联调；不会自动获得你与伴侣的私聊。</p></div>
           <button className="love-danger" disabled={saving || busy} onClick={() => setClearConfirm(true)}>清空对话、记忆、事项与导入记录</button>
           {clearConfirm && <div className="love-confirm"><p>本空间数据会永久删除。保留账号与表达设置；供应商留存不在此操作范围内。</p><button disabled={saving} onClick={() => void task(async () => { await api('/history', 'DELETE'); setOlder([]); await refresh(); setClearConfirm(false); setNotice('已清空本空间数据。') })}>确认清空</button><button onClick={() => setClearConfirm(false)}>保留数据</button></div>}
         </section>}
+        {collectionKind && collection.hasMore && <button className="love-load-more" disabled={collection.loading} onClick={() => void collection.loadMore()}>加载更多资料</button>}
       </div>
     </main>
 
     {draft && <div className="love-modal-backdrop"><section className="love-modal" role="dialog" aria-modal="true" aria-labelledby="love-modal-title"><h2 id="love-modal-title">{draft.kind === 'memory' ? '确认这条记忆' : '安排提醒'}</h2><p>核对后保存，不会通知伴侣。</p><form onSubmit={saveDraft}>{error && <p role="alert" className="love-alert">{error}</p>}<label>内容<textarea autoFocus required maxLength={500} rows={3} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>{draft.quote && <blockquote>来源：“{draft.quote}”</blockquote>}{draft.kind === 'reminder' && <label>提醒时间（设备时区）<input required type="datetime-local" value={draft.due_at} onChange={event => setDraft({ ...draft, due_at: event.target.value })} /><small>后台生成提醒记录；外部推送取决于通道连接。</small></label>}<div className="love-modal-actions"><button type="button" disabled={saving} onClick={() => setDraft(null)}>暂不保存</button><button className="love-primary" disabled={saving || !draft.title.trim()}>确认保存</button></div></form></section></div>}
     {transcript !== null && <div className="love-modal-backdrop"><section className="love-modal" role="dialog" aria-modal="true" aria-labelledby="transcript-title"><h2 id="transcript-title">核对截图文字</h2><p>确认双方身份、发言顺序和文字，可直接修改。</p><textarea className="love-transcript-editor" rows={12} value={transcript} onChange={event => setTranscript(event.target.value)} /><div className="love-modal-actions"><button onClick={() => setTranscript(null)}>返回</button><button className="love-primary" disabled={!transcript.trim()} onClick={() => { setText(current => (current ? current + '\n\n' : '') + transcript); setTranscript(null); setImages([]); requestKey.current = null }}>确认并放入输入框</button></div></section></div>}
+    {rawDocument && <div className="love-modal-backdrop"><section className="love-modal" role="dialog" aria-modal="true" aria-labelledby="raw-title"><h2 id="raw-title">{rawDocument.title}</h2><textarea className="love-transcript-editor" aria-label="聊天原文" rows={14} readOnly value={rawDocument.text} /><div className="love-modal-actions"><button onClick={() => setRawDocument(null)}>关闭原文</button></div></section></div>}
     {authMode && <AuthDialog username={state?.account.username ?? null} initialMode={authMode} onClose={() => setAuthMode(null)} onRefresh={reloadSpace} onNotice={setNotice} onBusy={setSaving} />}
   </div>
 }

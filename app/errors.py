@@ -22,7 +22,7 @@ class AppError(Exception):
 
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     headers = {}
-    if exc.status_code == 429 and isinstance(exc.details, dict):
+    if exc.status_code in {429, 503} and isinstance(exc.details, dict):
         retry = exc.details.get("retry_after_seconds")
         if isinstance(retry, int):
             headers["Retry-After"] = str(max(retry, 1))

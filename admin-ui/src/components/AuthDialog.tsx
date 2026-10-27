@@ -2,17 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, ApiError } from '../relationshipApi'
 import Icon from './Icon'
+import EmailPanel from './EmailPanel'
 import './AuthDialog.css'
 
 type Captcha = { challenge_id: string; image: string; expires_in: number }
 type DeviceSession = { id: string; current: boolean; device_label: string; created_at: string; expires_at: string }
 type SecurityEvent = { id: string; event: string; device_label: string; created_at: string }
 type Props = { username: string | null; initialMode: 'login' | 'register'; onClose: () => void; onRefresh: () => Promise<void>; onNotice: (message: string) => void; onBusy: (busy: boolean) => void }
-const eventNames: Record<string, string> = { registered: '创建账号', logged_in: '登录成功', login_failed: '密码验证失败', logged_out: '退出登录', session_revoked: '撤销设备会话', other_sessions_revoked: '退出其他设备', password_changed: '修改密码', password_change_failed: '修改密码验证失败' }
+const eventNames: Record<string, string> = { registered: '创建账号', logged_in: '登录成功', login_failed: '密码验证失败', logged_out: '退出登录', session_revoked: '撤销设备会话', other_sessions_revoked: '退出其他设备', password_changed: '修改密码', password_change_failed: '修改密码验证失败', email_bind_failed: '邮箱绑定验证失败', email_verification_requested: '申请邮箱验证', email_verified: '邮箱验证成功', password_reset_requested: '申请密码找回', password_reset: '通过邮箱重置密码' }
 const dateTime = (value: string) => new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 export default function AuthDialog({ username, initialMode, onClose, onRefresh, onNotice, onBusy }: Props) {
-  const [mode, setMode] = useState<'login' | 'register' | 'account' | 'password'>(username ? 'account' : initialMode)
+  const [mode, setMode] = useState<'login' | 'register' | 'account' | 'password' | 'email' | 'recovery'>(username ? 'account' : initialMode)
   const [form, setForm] = useState({ username: '', password: '', confirm_password: '', current_password: '', captcha_code: '', remember_me: false })
   const [showPassword, setShowPassword] = useState(false)
   const [captcha, setCaptcha] = useState<Captcha | null>(null)
@@ -55,6 +56,7 @@ export default function AuthDialog({ username, initialMode, onClose, onRefresh, 
   }, [showError])
 
   useEffect(() => {
+    if (mode === 'email' || mode === 'recovery') return
     const timer = setTimeout(() => { void (mode === 'account' ? loadAccount() : loadCaptcha()) }, 0)
     return () => clearTimeout(timer)
   }, [mode, loadAccount, loadCaptcha])
@@ -106,13 +108,14 @@ export default function AuthDialog({ username, initialMode, onClose, onRefresh, 
     <section className={`love-modal auth-dialog ${mode === 'account' ? 'auth-account' : ''}`} role="dialog" aria-modal="true" aria-labelledby="account-title">
       <button className="auth-close" type="button" disabled={busy} onClick={onClose} aria-label="关闭账号窗口">×</button>
       <div className="auth-heading"><span className="auth-brand-icon"><Icon name="shield" /></span><span className="auth-eyebrow">XINYU · YOUR PRIVATE SPACE</span>
-        <h2 id="account-title">{{ login: '欢迎回来。', register: '让在意，妥善保存。', account: '账号与安全', password: '设置一个新的密码' }[mode]}</h2>
-        <p>{mode === 'register' ? '注册后保留当前访客记录，也可以在其他设备登录。' : mode === 'login' ? '登录你的私人空间，接着聊那些重要的小事。' : mode === 'password' ? '验证当前密码后更新，其他设备会自动退出。' : `${username}，在这里管理登录设备与密码。`}</p>
+        <h2 id="account-title">{{ login: '欢迎回来。', register: '让在意，妥善保存。', account: '账号与安全', password: '设置一个新的密码', email: '绑定找回邮箱', recovery: '找回你的私人空间' }[mode]}</h2>
+        <p>{mode === 'register' ? '注册后保留当前访客记录，也可以在其他设备登录。' : mode === 'login' ? '登录你的私人空间，接着聊那些重要的小事。' : mode === 'password' ? '验证当前密码后更新，其他设备会自动退出。' : mode === 'email' ? '验证一个你能长期使用的邮箱，给账号留一条找回路径。' : mode === 'recovery' ? '通过提前验证的邮箱，重新设置密码。' : `${username}，在这里管理登录设备与密码。`}</p>
       </div>
       {error && <div className="auth-error" role="alert">{error}</div>}
       {message && <div className="auth-success" role="status">{message}</div>}
-      {mode === 'account' ? <>
+      {mode === 'email' || mode === 'recovery' ? <EmailPanel purpose={mode === 'email' ? 'bind' : 'reset'} onBack={() => switchMode(mode === 'email' ? 'account' : 'login')} onBusy={value => { setBusy(value); onBusy(value) }} /> : mode === 'account' ? <>
         <div className="auth-security-summary"><Icon name="shield" /><div><strong>私人空间已关联账号</strong><span>密码受保护 · 登录设备可以随时退出</span></div><button disabled={busy} onClick={() => switchMode('password')}>修改密码 →</button></div>
+        <button className="auth-back" disabled={busy} onClick={() => switchMode('email')}>绑定 / 更换找回邮箱 →</button>
         <div className="auth-section-title"><h3>登录设备 <small>{sessions.length} / 5</small></h3><button disabled={busy || accountLoading} onClick={() => void action(async () => { const result = await api<{ revoked_count: number }>('/auth/logout-all', 'POST'); await loadAccount(); setMessage(`已退出 ${result.revoked_count} 个其他会话。`) })}>退出其他设备</button></div>
         <p className="auth-caption">根据浏览器识别设备；同一设备的不同浏览器会分别显示。</p>
         {accountLoading ? <p className="auth-caption" role="status">正在读取会话…</p> : <div className="auth-device-list">{sessions.map(session => <article key={session.id}><span className="auth-device-icon"><Icon name="user" /></span><div><strong>{session.device_label} {session.current && <em>当前设备</em>}</strong><small>{dateTime(session.created_at)} 登录 · {dateTime(session.expires_at)} 到期</small></div>{!session.current && <button disabled={busy} onClick={() => void action(async () => { await api(`/auth/sessions/${session.id}`, 'DELETE'); await loadAccount(); setMessage('该设备已退出。') })}>退出</button>}</article>)}</div>}
@@ -134,7 +137,8 @@ export default function AuthDialog({ username, initialMode, onClose, onRefresh, 
             <button className="love-primary auth-submit" disabled={busy || loadingCode || !captcha || !codeIn || !!retryIn || (isNewPassword && (!passwordOkay || !confirmationOkay))}>{busy ? '正在验证…' : retryIn ? `请 ${retryIn} 秒后重试` : mode === 'register' ? '创建账号并保留记录' : mode === 'password' ? '确认修改密码' : '登录私人空间'}<Icon name="arrow" /></button>
           </fieldset>
         </form>
-        <div className="auth-bottom-note"><Icon name="shield" /><p>{mode === 'password' ? '修改成功会撤销旧会话，并为当前设备创建新会话。' : mode === 'register' ? '暂未接入邮箱找回，请妥善保存密码。' : '默认会话最长 8 小时；登录已有账号不会自动合并访客记录。'}</p></div>
+        {mode === 'login' && <button className="auth-back" disabled={busy} onClick={() => switchMode('recovery')}>忘记密码？通过已验证邮箱找回 →</button>}
+        <div className="auth-bottom-note"><Icon name="shield" /><p>{mode === 'password' ? '修改成功会撤销旧会话，并为当前设备创建新会话。' : mode === 'register' ? '注册后可在账号管理中绑定邮箱，用于密码找回。' : '默认会话最长 8 小时；登录已有账号不会自动合并访客记录。'}</p></div>
         {mode === 'password' && <button className="auth-back" disabled={busy} onClick={() => switchMode('account')}>← 返回账号管理</button>}
       </>}
     </section>

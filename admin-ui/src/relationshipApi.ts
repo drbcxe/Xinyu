@@ -7,10 +7,10 @@ export type GraphStep = { node: string; milliseconds: number; mode?: string; sou
 export type Advice = { transcript?: string; analysis: string; uncertainty: string; replies: string[]; candidates: Candidate[]; date_plans?: Plan[]; tool_trace?: Trace[]; sources?: RagSource[]; retrieved_sources?: RagSource[]; graph_trace?: GraphStep[]; retrieval_trace?: Retrieval[]; execution?: { engine: string; checkpointed: boolean; resumed: boolean; model_steps: number; tool_calls: number; usage: Record<string, number> } }
 export type Turn = { id: string; content: string; result: Advice; created_at: string }
 export type Item = { id: string; kind: 'memory' | 'reminder' | 'date_plan' | 'chat_log'; title: string; quote: string; source_turn_id: string | null; due_at: string | null; status: 'active' | 'completed' | 'cancelled'; revision: number; details: Partial<Plan> & { text?: string } }
-export type Job = { id: string; status: 'queued' | 'running' | 'succeeded' | 'failed'; error: string; turn_id: string | null; created_at: string }
+export type Job = { id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; error: string; turn_id: string | null; created_at: string; attempts: number; cancel_requested: boolean; available_at: string; progress?: { node: string; model_step: number } | null }
 export type Notice = { id: string; title: string; status: string; weixin_status: string; error: string; created_at: string }
 export type Profile = { partner_name: string; style: string }
-export type State = { profile: Profile; turns: Turn[]; items: Item[]; jobs: Job[]; notices: Notice[]; supports_images: boolean; server_time: string; worker_online: boolean; account: { username: string | null }; weixin: { status: string; interface_ready: boolean } }
+export type State = { version: string; history_has_more: boolean; item_counts: Record<string, number>; profile: Profile; turns: Turn[]; jobs: Job[]; notices: Notice[]; supports_images: boolean; server_time: string; worker_online: boolean; account: { username: string | null }; weixin: { status: string; interface_ready: boolean } }
 
 export class ApiError extends Error {
   code: string

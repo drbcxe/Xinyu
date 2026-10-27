@@ -51,8 +51,8 @@ Redis不可用时，验证码、账号验证及已登录会话返回 503，不�
 
 ## 当前边界与验证
 
-图形验证码增加自动化尝试成本，不是多因素认证，也不是可靠的机器人判定服务。暂未实现邮箱验证码、短信、MFA、密码找回或登录推送。邮箱身份无法通过格式检查来验证，接入前需要真实 SMTP 服务及投递配置。
+图形验证码增加自动化尝试成本，不是多因素认证，也不是可靠的机器人判定服务。已补 SMTP 邮箱验证与密码找回，详见 [邮箱找回说明](./email-recovery.md)。短信、MFA 和登录推送仍未实现。真实 SMTP 授权码待本地配置，不能把回环邮件测试当作真实投递验证。
 
-本次用合成账号在本地实际检查验证码过期/错误/重放/跨浏览器绑定、确认密码和弱密码、失败锁定与清零、保持登录、会话隔离和撤销、密码更新、Origin拒绝及Redis不可用时返回503；检查后清理临时账号。前端通过 ESLint、TypeScript/Vite 构建，数据库通过 Alembic 结构检查。没有运行完整 pytest 套件，也没有进行真实邮件或短信投递。
+本次用合成账号在本地实际检查验证码过期/错误/重放/跨浏览器绑定、确认密码和弱密码、失败锁定与清零、保持登录、会话隔离和撤销、密码更新、Origin拒绝及Redis不可用时返回503；检查后清理临时账号。前端通过 ESLint、TypeScript/Vite 构建，数据库通过 Alembic 结构检查。后续已新增隔离数据库 / Redis 的正式 pytest 回归与 CI，详见 [任务与回归说明](./task-controls.md)。仍未进行用户真实 SMTP 账号或短信投递。
 
 实现参考：[Redis GETDEL](https://redis.io/docs/latest/commands/getdel/)、[OWASP 认证建议](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[OWASP 会话管理建议](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)。

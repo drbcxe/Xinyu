@@ -1,11 +1,69 @@
 import time
 from collections.abc import Callable
+from functools import lru_cache
 from urllib.parse import urlsplit
 
 import httpx
 
 from app.config import get_settings
 from app.errors import AppError
+from app.services.resource_control import (
+    ensure_active,
+    estimate_input,
+    provider_slot,
+    reserve_call,
+    settle_call,
+)
+
+
+@lru_cache
+def model_http_client() -> httpx.Client:
+    concurrency = max(4, get_settings().global_model_concurrency)
+    return httpx.Client(
+        trust_env=False,
+        limits=httpx.Limits(
+            max_connections=concurrency, max_keepalive_connections=concurrency
+        ),
+    )
+
+
+def controlled_post(
+    base_url: str, headers: dict, payload: dict, timeout: float, deadline: float
+) -> httpx.Response:
+    with provider_slot(deadline):
+        call_id, _ = reserve_call(
+            str(payload["model"]),
+            estimate_input(payload["messages"], payload.get("tools", [])),
+            int(payload["max_tokens"]),
+        )
+        usage, sent, rejected = None, False, False
+        try:
+            ensure_active()
+            sent = True
+            response = model_http_client().post(
+                base_url + "/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=httpx.Timeout(timeout, connect=min(10, timeout)),
+            )
+            rejected = 400 <= response.status_code < 500
+            if response.is_success:
+                try:
+                    raw = response.json().get("usage")
+                    if isinstance(raw, dict):
+                        usage = {
+                            key: value
+                            for key, value in raw.items()
+                            if key
+                            in {"prompt_tokens", "completion_tokens", "total_tokens"}
+                            and type(value) is int
+                            and value >= 0
+                        }
+                except (ValueError, AttributeError):
+                    pass
+            return response
+        finally:
+            settle_call(call_id, usage=usage, sent=sent, rejected=rejected)
 
 
 def require_model_config(
@@ -81,13 +139,7 @@ def complete(
             )
         timeout = min(settings.model_timeout_seconds, remaining)
         try:
-            with httpx.Client(
-                trust_env=False,
-                timeout=httpx.Timeout(timeout, connect=min(10, timeout)),
-            ) as client:
-                response = client.post(
-                    base_url + "/chat/completions", headers=headers, json=payload
-                )
+            response = controlled_post(base_url, headers, payload, timeout, deadline)
         except (httpx.TimeoutException, httpx.NetworkError):
             if attempt < retry_budget and deadline - time.monotonic() > 2:
                 on_retry(attempt + 1)
