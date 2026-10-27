@@ -23,6 +23,7 @@ from app.models.relationship import (
 )
 from app.repositories.database import get_engine
 from app.services.graph_checkpoints import checkpoint_store
+from app.services.recovery_journal import record_deletion
 from app.services.relationship_rag import schedule_index
 
 
@@ -180,6 +181,8 @@ def prune_online_data(stamp=None):
                     saver.delete_thread(f"xinyu:{owner}:{job.id}")
                 db.delete(job)
             deleted["jobs"] += len(jobs)
+            if turns or imports or jobs:
+                record_deletion(db, owner, "expiry", threshold.isoformat())
             db.commit()
     rules = [
         (RelationshipSession, RelationshipSession.expires_at < stamp),

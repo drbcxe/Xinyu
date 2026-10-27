@@ -35,6 +35,7 @@ from app.schemas.relationship import (
 from app.services.account_closure import purge_content
 from app.services.auth_cache import consume_rate
 from app.services.privacy_policy import privacy_status, require_processing
+from app.services.recovery_journal import record_deletion
 from app.services.relationship_auth import Owner, check_origin
 from app.services.relationship_jobs import enqueue, get_profile, job_data
 from app.services.relationship_rag import index_status, retrieve, schedule_index
@@ -462,6 +463,7 @@ def delete_item(item_id: UUID, db: DB, owner: Owner):
     )
     if not item:
         raise AppError(404, "ITEM_NOT_FOUND", "事项不存在")
+    record_deletion(db, owner, "item", str(item_id))
     invalidate_notices(db, item.id)
     schedule_index(db, item, deleted=True)
     db.delete(item)

@@ -78,5 +78,6 @@ pnpm dev
 - [运行状态、日志与告警](./docs/observability.md)
 - [Agent 质量评测与版本比较](./docs/agent-evaluation.md)
 - [AI 数据处理选择与保留期限](./docs/privacy-retention.md)
+- [加密备份与隔离恢复演练](./docs/backup-recovery.md)
 
 仓库：[drbcxe/Xinyu](https://github.com/drbcxe/Xinyu)。

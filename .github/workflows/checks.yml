@@ -53,6 +53,8 @@ jobs:
       - run: uv run ruff check app scripts quality tests
       - run: uv run ruff format --check app scripts quality tests
       - run: uv run python -m pytest tests -q --tb=short
+        env:
+          XINYU_PG_CONTAINER: ${{ job.services.postgres.id }}
 
   frontend:
     runs-on: ubuntu-latest

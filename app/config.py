@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     ops_token: SecretStr = SecretStr("")
     database_connect_timeout: int = Field(default=5, ge=1, le=30)
     database_statement_timeout_ms: int = Field(default=30000, ge=1000, le=120000)
+    backup_key_file: str = ""
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

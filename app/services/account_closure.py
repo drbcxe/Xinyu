@@ -28,11 +28,13 @@ from app.models.relationship import (
 from app.repositories.database import get_engine
 from app.services.auth_cache import digest
 from app.services.graph_checkpoints import checkpoint_store, clear_checkpoints
+from app.services.recovery_journal import record_deletion
 from app.services.relationship_auth import revoke_sessions
 from app.services.relationship_rag import schedule_index
 
 
 def purge_content(db: Session, owner: str):
+    record_deletion(db, owner, "content")
     for item in db.scalars(
         select(RelationshipItem).where(RelationshipItem.owner == owner)
     ):
@@ -70,6 +72,7 @@ def close_account(db: Session, owner: str) -> str:
     )
     if not profile:
         raise AppError(409, "SPACE_CHANGED", "空间状态发生变化，请刷新后重试")
+    record_deletion(db, owner)
     revoke_sessions(
         db,
         list(

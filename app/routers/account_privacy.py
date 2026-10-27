@@ -29,6 +29,7 @@ from app.services.privacy_policy import (
     privacy_status,
     provider_fingerprint,
 )
+from app.services.recovery_journal import record_deletion
 from app.services.relationship_auth import (
     DB,
     CaptchaFields,
@@ -103,6 +104,7 @@ def set_privacy(payload: PrivacyInput, request: Request, db: DB, owner: Owner):
         row = RelationshipPrivacy(owner=owner)
         db.add(row)
     now = datetime.now(UTC)
+    record_deletion(db, owner, "retention", str(payload.history_days))
     row.version, row.provider_fingerprint, row.history_days = (
         POLICY_VERSION,
         provider_fingerprint(),
@@ -241,6 +243,7 @@ def save_feedback(
 def delete_feedback(turn_id: UUID, request: Request, db: DB, owner: Owner):
     local_operation_rate(owner, address(request), "feedback", 20)
     own_turn(db, owner, turn_id, lock=True)
+    record_deletion(db, owner, "feedback", str(turn_id))
     db.execute(
         RelationshipFeedback.__table__.delete().where(
             RelationshipFeedback.owner == owner,

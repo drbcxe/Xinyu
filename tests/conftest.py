@@ -3,7 +3,9 @@
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -102,6 +104,7 @@ def infrastructure():
 def backend(infrastructure, monkeypatch):
     from app.models import Base
     from app.repositories.database import get_engine
+    from app.services import recovery_journal
     from app.services.auth_cache import get_redis
 
     get_engine.cache_clear()
@@ -112,6 +115,15 @@ def backend(infrastructure, monkeypatch):
     monkeypatch.setenv("MODEL_BASE_URL", "https://model.invalid/v1")
     monkeypatch.setenv("MODEL_NAME", "fixture-model")
     monkeypatch.setenv("MODEL_API_KEY", "test-only-never-real")
+    recovery_root = PROJECT_ROOT / ".runtime" / "test-recovery"
+    recovery_root.mkdir(parents=True, exist_ok=True)
+    recovery_temp = tempfile.TemporaryDirectory(prefix="test-", dir=recovery_root)
+    recovery_path = Path(recovery_temp.name).resolve()
+    assert recovery_path.is_relative_to(recovery_root.resolve())
+    monkeypatch.setenv("BACKUP_KEY_FILE", str(recovery_path / "master.key"))
+    monkeypatch.setattr(
+        recovery_journal, "journal_path", lambda: recovery_path / "deletions.log"
+    )
     get_settings.cache_clear()
     engine = get_engine()
     assert engine.url.database == infrastructure.database_name
@@ -132,3 +144,4 @@ def backend(infrastructure, monkeypatch):
         cache.close()
         get_redis.cache_clear()
         get_settings.cache_clear()
+        recovery_temp.cleanup()
