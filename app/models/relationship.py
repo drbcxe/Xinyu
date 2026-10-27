@@ -178,6 +178,9 @@ class RelationshipRagIndex(Base):
     status: Mapped[str] = mapped_column(String(20), index=True)
     signature: Mapped[str] = mapped_column(String(64), default="")
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_points: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0"
+    )
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(String(300), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -277,6 +280,16 @@ class RelationshipStoragePolicy(Base):
     job_reserve_bytes: Mapped[int] = mapped_column(BigInteger)
     profile_limit: Mapped[int] = mapped_column(Integer)
     emergency_bytes: Mapped[int] = mapped_column(BigInteger)
+    owner_vector_points: Mapped[int] = mapped_column(BigInteger, server_default="50000")
+    global_vector_points: Mapped[int] = mapped_column(
+        BigInteger, server_default="250000"
+    )
+    vector_untracked_points: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    vector_observed_points: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    vector_audited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    vector_scope: Mapped[str] = mapped_column(String(100), server_default="")
 
 
 class RelationshipStorageTotal(Base):

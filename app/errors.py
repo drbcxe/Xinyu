@@ -38,6 +38,22 @@ STORAGE_ERROR_CODES = {
         "存储预算尚未初始化，请先升级并准备数据库",
     ),
     "XY005": (503, "SPACE_COUNT_LIMIT", "服务空间数量已达上限，请稍后重试"),
+    "XY006": (
+        413,
+        "VECTOR_QUOTA_EXCEEDED",
+        "语义索引容量不足，请删除不需要的资料后重试；原文仍可用关键词检索",
+    ),
+    "XY007": (
+        503,
+        "GLOBAL_VECTOR_QUOTA_EXCEEDED",
+        "服务语义索引预算已满，请稍后手动重试；原文仍可用关键词检索",
+    ),
+    "XY008": (
+        503,
+        "VECTOR_AUDIT_REQUIRED",
+        "语义索引容量尚未核对或存在未归属数据，请联系管理员；原文仍可用关键词检索",
+    ),
+    "XY009": (503, "VECTOR_RESERVATION_INVALID", "语义索引容量记录无效，请联系管理员"),
 }
 
 

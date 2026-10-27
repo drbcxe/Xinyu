@@ -26,6 +26,11 @@ from app.repositories.database import get_engine
 from app.services.resource_control import ensure_active, purpose_scope
 from app.services.retrieval_cache import corpus_cache
 from app.services.storage_budget import lock_storage
+from app.services.vector_capacity import (
+    ensure_vector_audit,
+    vector_guard,
+    vector_summary,
+)
 
 CHUNK_SIZE = 420
 CHUNK_OVERLAP = 70
@@ -179,7 +184,9 @@ def schedule_index(db: Session, item: RelationshipItem, *, deleted: bool = False
         .values(**values)
         .on_conflict_do_update(
             index_elements=["item_id"],
-            set_={k: v for k, v in values.items() if k != "item_id"},
+            set_={
+                k: v for k, v in values.items() if k not in {"item_id", "chunk_count"}
+            },
         )
     )
 
@@ -197,62 +204,163 @@ def source_filter(owner: str, source_id: str | None = None) -> models.Filter:
     return models.Filter(must=conditions)
 
 
-def purge_source_vectors(owner: str, source_id: str):
-    """Remove a source from current and older application embedding collections."""
-    client = vector_client()
-    for collection in client.get_collections().collections:
+def managed_collections():
+    return [
+        collection.name
+        for collection in vector_client().get_collections().collections
         if (
             collection.name == collection_name()
             if get_settings().rag_collection_override
             else re.fullmatch(r"xinyu_[0-9a-f]{16}", collection.name)
-        ):
-            client.delete(
-                collection.name,
-                models.FilterSelector(filter=source_filter(owner, source_id)),
-                wait=True,
+        )
+    ]
+
+
+def purge_source_vectors(owner: str, source_id: str):
+    """Call under the source guard; confirmation, not acknowledgement, releases capacity."""
+    client = vector_client()
+    for collection in managed_collections():
+        client.delete(
+            collection,
+            models.FilterSelector(filter=source_filter(owner, source_id)),
+            wait=True,
+            ordering=models.WriteOrdering.STRONG,
+        )
+        if client.count(
+            collection, count_filter=source_filter(owner, source_id), exact=True
+        ).count:
+            raise AppError(
+                503,
+                "INDEX_DELETE_INCOMPLETE",
+                "旧向量尚未确认移除，保留容量占用并稍后重试",
             )
 
 
+def index_due(now):
+    return or_(
+        RelationshipRagIndex.status.in_(["pending", "deleting", "indexing"]),
+        (RelationshipRagIndex.status == "delete_failed")
+        & (RelationshipRagIndex.updated_at < now - timedelta(seconds=30)),
+        (RelationshipRagIndex.status == "failed")
+        & (RelationshipRagIndex.attempts < 3)
+        & (RelationshipRagIndex.updated_at < now - timedelta(seconds=30)),
+    )
+
+
+def current_index(db, job, stamp, revision):
+    item = (
+        db.execute(
+            select(
+                RelationshipItem.owner,
+                RelationshipItem.status,
+                RelationshipItem.revision,
+            ).where(RelationshipItem.id == job.item_id)
+        ).one_or_none()
+        if job
+        else None
+    )
+    return bool(
+        job
+        and job.status == "indexing"
+        and job.error == stamp
+        and job.revision == revision
+        and item
+        and item.owner == job.owner
+        and item.status == "active"
+        and item.revision == revision
+    )
+
+
+def release_source_allocation(item_id, *, points=0, stamp=None, revision=None):
+    with Session(get_engine()) as db:
+        lock_storage(db)
+        job = db.scalar(
+            select(RelationshipRagIndex)
+            .where(RelationshipRagIndex.item_id == item_id)
+            .with_for_update()
+        )
+        matching = current_index(db, job, stamp, revision)
+        if job:
+            job.reserved_points = points if matching else 0
+            job.chunk_count = 0
+            db.commit()
+        return matching
+
+
 def process_index() -> bool:
-    """One durable outbox item; no SQL transaction is held during embedding/network calls."""
-    now = datetime.now(UTC)
+    """Exclusive session guard per source; short SQL writes never span embedding or vector I/O."""
+    if not ensure_vector_audit():
+        return False
+    with Session(get_engine()) as db:
+        candidates = list(
+            db.scalars(
+                select(RelationshipRagIndex.item_id)
+                .where(index_due(datetime.now(UTC)))
+                .order_by(RelationshipRagIndex.updated_at)
+                .limit(20)
+            )
+        )
+    for item_id in candidates:
+        with vector_guard(item_id) as guard:
+            if guard is None:
+                continue
+            if process_guarded_index(item_id, guard):
+                return True
+    return False
+
+
+def process_guarded_index(item_id, guard):
+    stamp, chunks = str(uuid4()), []
     with Session(get_engine(), expire_on_commit=False) as db:
         lock_storage(db)
         job = db.scalar(
             select(RelationshipRagIndex)
             .where(
-                or_(
-                    RelationshipRagIndex.status.in_(["pending", "deleting"]),
-                    (RelationshipRagIndex.status == "delete_failed")
-                    & (RelationshipRagIndex.updated_at < now - timedelta(seconds=30)),
-                    (RelationshipRagIndex.status == "failed")
-                    & (RelationshipRagIndex.attempts < 3)
-                    & (RelationshipRagIndex.updated_at < now - timedelta(seconds=30)),
-                    (RelationshipRagIndex.status == "indexing")
-                    & (RelationshipRagIndex.updated_at < now - timedelta(minutes=5)),
-                )
+                RelationshipRagIndex.item_id == item_id, index_due(datetime.now(UTC))
             )
-            .order_by(RelationshipRagIndex.updated_at)
-            .with_for_update(skip_locked=True)
-            .limit(1)
+            .with_for_update()
         )
         if not job:
             return False
-        item_id, owner, revision = job.item_id, job.owner, job.revision
-        stamp = str(uuid4())
+        if job.status == "indexing" and job.attempts >= 3:
+            job.status, job.error = "failed", "索引进程多次中断，请手动重试"
+            job.updated_at = datetime.now(UTC)
+            db.commit()
+            return True
+        owner, revision = job.owner, job.revision
         item = db.get(RelationshipItem, item_id)
-        chunks = (
-            chunks_for(item)
-            if item and item.status == "active" and job.status != "deleting"
-            else []
+        indexing = bool(
+            item
+            and item.owner == owner
+            and item.status == "active"
+            and job.status not in {"deleting", "delete_failed"}
         )
-        job.status, job.error, job.updated_at = "indexing", stamp, now
+        job.status, job.error, job.updated_at = "indexing", stamp, datetime.now(UTC)
         job.attempts += 1
         db.commit()
     try:
-        client = vector_client()
-        # Delete prior source revisions before replacement. Retrieval always revalidates source revisions in SQL.
+        # Chunk construction can be CPU-heavy; keep it outside the short admission transaction.
+        chunks = chunks_for(item) if indexing else []
+        if chunks:
+            with Session(get_engine()) as db:
+                lock_storage(db)
+                job = db.get(RelationshipRagIndex, item_id)
+                if not current_index(db, job, stamp, revision):
+                    return True
+                job.reserved_points = max(job.reserved_points, len(chunks))
+                db.commit()
+        guard.execute("SELECT 1")
         purge_source_vectors(owner, item_id)
+        if not release_source_allocation(
+            item_id, points=len(chunks), stamp=stamp, revision=revision
+        ):
+            with Session(get_engine()) as db:
+                lock_storage(db)
+                job = db.get(RelationshipRagIndex, item_id)
+                if job and job.error == stamp and not chunks:
+                    db.delete(job)
+                    db.commit()
+            return True
         if chunks:
             encoder = embedder()
             for start in range(0, len(chunks), 32):
@@ -260,7 +368,16 @@ def process_index() -> bool:
                 vectors = list(
                     encoder.embed([row["quote"] for row in batch], batch_size=32)
                 )
-                client.upsert(
+                guard.execute("SELECT 1")
+                with Session(get_engine()) as db:
+                    still_current = current_index(
+                        db, db.get(RelationshipRagIndex, item_id), stamp, revision
+                    )
+                if not still_current:
+                    purge_source_vectors(owner, item_id)
+                    release_source_allocation(item_id)
+                    return True
+                vector_client().upsert(
                     collection_name(),
                     points=[
                         models.PointStruct(
@@ -269,8 +386,9 @@ def process_index() -> bool:
                         for row, vector in zip(batch, vectors, strict=True)
                     ],
                     wait=True,
+                    ordering=models.WriteOrdering.STRONG,
                 )
-        discard_points = False
+        stale = False
         with Session(get_engine()) as db:
             lock_storage(db)
             job = db.scalar(
@@ -278,39 +396,26 @@ def process_index() -> bool:
                 .where(RelationshipRagIndex.item_id == item_id)
                 .with_for_update()
             )
-            if job and job.error == stamp and job.revision == revision:
-                current = db.get(RelationshipItem, item_id)
-                if not current or current.status != "active":
-                    if chunks:
-                        # Leave a durable delete request; network work is outside the SQL lock.
-                        job.status, job.error, job.attempts = "deleting", "", 0
-                        discard_points = True
-                    else:
-                        db.delete(job)
-                else:
-                    job.status, job.signature = "ready", index_signature()
-                    job.chunk_count, job.error, job.updated_at = (
-                        len(chunks),
-                        "",
-                        datetime.now(UTC),
-                    )
+            if current_index(db, job, stamp, revision):
+                job.status, job.signature = "ready", index_signature()
+                job.chunk_count, job.error, job.updated_at = (
+                    len(chunks),
+                    "",
+                    datetime.now(UTC),
+                )
                 db.commit()
             else:
-                # A newer edit/delete arrived while encoding. Remove only this stale revision's points.
-                if chunks and (
-                    not job
-                    or job.revision != revision
-                    or job.status in {"deleting", "delete_failed"}
-                ):
-                    discard_points = True
-        if discard_points:
-            client.delete(
-                collection_name(),
-                models.PointIdsList(points=[row["point_id"] for row in chunks]),
-                wait=True,
-            )
+                stale = True
+        if stale:
+            purge_source_vectors(owner, item_id)
+            release_source_allocation(item_id)
         return True
-    except Exception as exc:  # noqa: BLE001 - durable background boundary, no private provider data
+    except Exception as exc:  # noqa: BLE001 - durable boundary; never include provider/private payloads
+        blocked = isinstance(exc, AppError) and exc.code in {
+            "VECTOR_QUOTA_EXCEEDED",
+            "GLOBAL_VECTOR_QUOTA_EXCEEDED",
+            "VECTOR_AUDIT_REQUIRED",
+        }
         with Session(get_engine()) as db:
             lock_storage(db)
             job = db.scalar(
@@ -319,11 +424,23 @@ def process_index() -> bool:
                 .with_for_update()
             )
             if job and job.error == stamp:
-                job.status, job.error, job.updated_at = (
-                    "failed" if chunks else "delete_failed",
-                    "向量索引暂未完成，可重试（" + type(exc).__name__ + "）",
-                    datetime.now(UTC),
+                job.status = (
+                    "quota_blocked"
+                    if blocked
+                    else "failed"
+                    if indexing
+                    else "delete_failed"
                 )
+                job.error = (
+                    (
+                        "索引容量需管理员核对；原文仍可关键词检索"
+                        if exc.code == "VECTOR_AUDIT_REQUIRED"
+                        else "语义索引容量不足，原文仍可关键词检索；清理后请手动重试"
+                    )
+                    if blocked
+                    else "向量索引暂未完成，可重试（" + type(exc).__name__ + "）"
+                )
+                job.updated_at = datetime.now(UTC)
                 db.commit()
         return True
 
@@ -594,28 +711,38 @@ def index_status(db: Session, owner: str) -> dict:
             RelationshipRagIndex.owner == owner, RelationshipRagIndex.status == "ready"
         )
     )
-    rows = db.scalars(
-        select(RelationshipRagIndex)
+    rows = db.execute(
+        select(
+            RelationshipRagIndex,
+            RelationshipItem.id,
+            RelationshipItem.title,
+            RelationshipItem.kind,
+        )
+        .join(
+            RelationshipItem,
+            (RelationshipItem.id == RelationshipRagIndex.item_id)
+            & (RelationshipItem.owner == RelationshipRagIndex.owner),
+        )
         .where(RelationshipRagIndex.owner == owner)
         .order_by(RelationshipRagIndex.updated_at.desc())
         .limit(100)
     )
-    documents = []
-    for row in rows:
-        item = db.get(RelationshipItem, row.item_id)
-        if item:
-            documents.append(
-                {
-                    "id": item.id,
-                    "title": item.title,
-                    "kind": item.kind,
-                    "status": row.status,
-                    "revision": row.revision,
-                    "chunks": row.chunk_count,
-                    "error": row.error if row.status == "failed" else "",
-                }
-            )
+    documents = [
+        {
+            "id": item_id,
+            "title": title,
+            "kind": kind,
+            "status": row.status,
+            "revision": row.revision,
+            "chunks": row.chunk_count if row.status == "ready" else 0,
+            "error": row.error
+            if row.status in {"failed", "quota_blocked", "delete_failed"}
+            else "",
+        }
+        for row, item_id, title, kind in rows
+    ]
     return {
+        "capacity": vector_summary(db, owner),
         "engine": "Qdrant",
         "embedding_model": get_settings().rag_embedding_model,
         "embedding_dimensions": model_descriptor()["dim"],

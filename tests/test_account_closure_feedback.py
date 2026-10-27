@@ -256,6 +256,12 @@ def test_deletion_receipt_completes_only_after_index_cleanup_and_settle_window(
         def delete(self, *args, **kwargs):
             deleted.append((args, kwargs))
 
+        def scroll(self, *_args, **_kwargs):
+            return [], None
+
+        def count(self, *_args, **_kwargs):
+            return SimpleNamespace(count=0)
+
     monkeypatch.setattr(relationship_rag, "vector_client", VectorFixture)
     assert relationship_rag.process_index() and deleted
     assert reconcile_closed_spaces() == 1

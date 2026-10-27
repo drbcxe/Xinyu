@@ -662,6 +662,12 @@ def drill(folder, journal=None):
                 "SELECT to_regprocedure('public.xinyu_storage_rebuild()')"
             ).fetchone()[0]:
                 conn.execute("SELECT public.xinyu_storage_rebuild()")
+            if conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='relationship_storage_policy' AND column_name='vector_audited_at')"
+            ).fetchone()[0]:
+                conn.execute(
+                    "UPDATE public.relationship_storage_policy SET vector_audited_at=NULL,vector_observed_points=0,vector_scope='' WHERE id=1"
+                )
             conn.commit()
         vector_results = {}
         with vector_client() as client:

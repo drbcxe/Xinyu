@@ -5,6 +5,7 @@ import time
 
 from app.services.graph_checkpoints import prepare_checkpoints
 from app.services.relationship_rag import backfill_indexes, embedder, ensure_collection
+from app.services.vector_capacity import reconcile_vectors
 
 
 def main():
@@ -26,6 +27,10 @@ def main():
         )
         print(f"Local embedding ready: {len(vector)} dimensions")
     backfill_indexes()
+    if not reconcile_vectors():
+        raise RuntimeError(
+            "Vector capacity audit is busy; stop older index workers before startup"
+        )
     print("LangGraph checkpoints and Qdrant collection ready")
 
 

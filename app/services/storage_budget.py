@@ -21,9 +21,9 @@ def configure_storage(force_rebuild=False):
     with get_engine().begin() as conn:
         conn.execute(text(LOCK_SQL))
         conn.execute(
-            text("""INSERT INTO public.relationship_storage_policy(id,owner_bytes,global_bytes,graph_thread_bytes,job_reserve_bytes,profile_limit,emergency_bytes)
-            VALUES(1,:owner,:global_,:graph,:reserve,:profiles,:emergency)
-            ON CONFLICT(id) DO UPDATE SET owner_bytes=EXCLUDED.owner_bytes,global_bytes=EXCLUDED.global_bytes,graph_thread_bytes=EXCLUDED.graph_thread_bytes,job_reserve_bytes=EXCLUDED.job_reserve_bytes,profile_limit=EXCLUDED.profile_limit,emergency_bytes=EXCLUDED.emergency_bytes"""),
+            text("""INSERT INTO public.relationship_storage_policy(id,owner_bytes,global_bytes,graph_thread_bytes,job_reserve_bytes,profile_limit,emergency_bytes,owner_vector_points,global_vector_points)
+            VALUES(1,:owner,:global_,:graph,:reserve,:profiles,:emergency,:owner_points,:global_points)
+            ON CONFLICT(id) DO UPDATE SET owner_bytes=EXCLUDED.owner_bytes,global_bytes=EXCLUDED.global_bytes,graph_thread_bytes=EXCLUDED.graph_thread_bytes,job_reserve_bytes=EXCLUDED.job_reserve_bytes,profile_limit=EXCLUDED.profile_limit,emergency_bytes=EXCLUDED.emergency_bytes,owner_vector_points=EXCLUDED.owner_vector_points,global_vector_points=EXCLUDED.global_vector_points"""),
             {
                 "owner": settings.owner_storage_bytes,
                 "global_": settings.global_storage_bytes,
@@ -31,6 +31,8 @@ def configure_storage(force_rebuild=False):
                 "reserve": settings.job_storage_reserve_bytes,
                 "profiles": settings.global_profile_limit,
                 "emergency": settings.storage_emergency_bytes,
+                "owner_points": settings.owner_vector_points,
+                "global_points": settings.global_vector_points,
             },
         )
         installed = conn.scalar(text("SELECT public.xinyu_storage_install()"))
@@ -91,8 +93,11 @@ def capacity_status():
     import shutil
 
     from app.config import PROJECT_ROOT
+    from app.services.vector_capacity import vector_summary
 
     result = global_storage_summary()
+    with Session(get_engine()) as db:
+        result["vectors"] = vector_summary(db)
     with get_engine().connect() as conn:
         result["postgres_database_bytes"] = conn.scalar(
             text("SELECT pg_database_size(current_database())")

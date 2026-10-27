@@ -136,6 +136,15 @@ def alert_findings(readiness, queues, http, storage=None):
         findings.append("QUEUE_STALLED")
     if queues.get("indexes", {}).get("delete_failed", 0):
         findings.append("INDEX_DELETE_FAILED")
+    if queues.get("indexes", {}).get("quota_blocked", 0):
+        findings.append("VECTOR_INDEX_BLOCKED")
+    vectors = (storage or {}).get("vectors", {})
+    if vectors.get("untracked_points", 0):
+        findings.append("UNATTRIBUTED_VECTORS")
+    if vectors and not vectors.get("audited_at"):
+        findings.append("VECTOR_AUDIT_REQUIRED")
+    if (vectors.get("audit_age_seconds") or 0) > 900:
+        findings.append("VECTOR_AUDIT_STALE")
     if queues.get("mail", {}).get("failed", 0):
         findings.append("MAIL_DELIVERY_FAILED")
     if queues.get("jobs", {}).get("failed", 0):
