@@ -33,7 +33,7 @@ from app.schemas.relationship import (
 )
 from app.services.auth_cache import consume_rate
 from app.services.graph_checkpoints import clear_checkpoints
-from app.services.relationship_auth import Owner
+from app.services.relationship_auth import Owner, check_origin
 from app.services.relationship_jobs import enqueue, get_profile, job_data
 from app.services.relationship_rag import index_status, retrieve, schedule_index
 from app.services.relationship_reads import (
@@ -52,7 +52,9 @@ from app.services.resource_control import (
     usage_summary,
 )
 
-router = APIRouter(prefix="/relationship", tags=["relationship"])
+router = APIRouter(
+    prefix="/relationship", tags=["relationship"], dependencies=[Depends(check_origin)]
+)
 DB = Annotated[Session, Depends(get_db)]
 
 

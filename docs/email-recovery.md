@@ -34,6 +34,7 @@ SMTP_TIMEOUT_SECONDS=10
 | `GET /api/relationship/auth/email` | 脱敏邮箱、是否验证、邮件服务是否已配置 |
 | `POST /api/relationship/auth/email/send` | 验证当前密码与图形验证码，创建绑定邮件 |
 | `POST /api/relationship/auth/email/verify` | 消费一次性验证码并绑定邮箱 |
+| `GET /api/relationship/auth/email/delivery/{id}` | 账号及申请浏览器内查看绑定邮件投递状态 |
 | `POST /api/relationship/auth/recovery/send` | 申请找回；账号不匹配时返回同样的通用提示 |
 | `POST /api/relationship/auth/recovery/verify` | 消费验证码、更新密码并撤销旧会话 |
 

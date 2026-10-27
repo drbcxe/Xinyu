@@ -137,3 +137,21 @@ def test_history_cursor_handles_equal_timestamps(backend):
             seen += [row["id"] for row in rows]
             earliest = rows[0]
         assert len(seen) == len(set(seen)) == 75
+
+
+def test_business_mutations_reject_untrusted_browser_origins(backend):
+    with TestClient(app) as client:
+        fixture_owner(client)
+        for path, payload in [
+            ("/knowledge/reindex", None),
+            ("/runs", {"request_id": str(uuid4()), "content": "synthetic"}),
+        ]:
+            response = client.post(
+                "/api/relationship" + path,
+                json=payload,
+                headers={"Origin": "https://evil.example.test"},
+            )
+            assert (
+                response.status_code == 403
+                and response.json()["error"]["code"] == "ORIGIN_FORBIDDEN"
+            )
