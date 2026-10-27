@@ -1,10 +1,11 @@
 from collections.abc import Iterator
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.errors import storage_error
 
 
 @lru_cache
@@ -14,7 +15,7 @@ def get_engine() -> Engine:
     if not database_url:
         raise RuntimeError("请在 .env 中配置 DATABASE_URL")
 
-    return create_engine(
+    engine = create_engine(
         database_url,
         pool_pre_ping=True,
         hide_parameters=True,
@@ -24,6 +25,14 @@ def get_engine() -> Engine:
         },
         pool_timeout=5,
     )
+
+    @event.listens_for(engine, "handle_error")
+    def safe_storage_error(context):
+        failure = storage_error(context.original_exception)
+        if failure:
+            raise failure from None
+
+    return engine
 
 
 def get_db() -> Iterator[Session]:

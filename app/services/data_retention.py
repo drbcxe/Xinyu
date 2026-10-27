@@ -22,9 +22,10 @@ from app.models.relationship import (
     RelationshipTurn,
 )
 from app.repositories.database import get_engine
-from app.services.graph_checkpoints import checkpoint_store
+from app.services.graph_checkpoints import checkpoint_store, delete_checkpoint_thread
 from app.services.recovery_journal import record_deletion
 from app.services.relationship_rag import schedule_index
+from app.services.storage_budget import lock_storage
 
 
 def cutoff(stamp):
@@ -52,6 +53,7 @@ def prune_graphs(stamp):
         if len(parts) != 3 or parts[0] != "xinyu" or len(parts[1]) != 64:
             continue
         with Session(get_engine()) as db:
+            lock_storage(db)
             profile = db.scalar(
                 select(RelationshipProfile)
                 .where(RelationshipProfile.owner == parts[1])
@@ -71,8 +73,8 @@ def prune_graphs(stamp):
                     latest = cursor.fetchone()["latest"]
                 if latest and latest > stamp - timedelta(days=7):
                     continue
-            with checkpoint_store() as saver:
-                saver.delete_thread(thread)
+            delete_checkpoint_thread(thread, db=db)
+            db.commit()
             deleted += 1
     return deleted
 
@@ -99,6 +101,7 @@ def prune_online_data(stamp=None):
             )
     for owner in dict.fromkeys(candidates):
         with Session(get_engine()) as db:
+            lock_storage(db)
             profile = db.scalar(
                 select(RelationshipProfile)
                 .where(RelationshipProfile.owner == owner)
@@ -177,8 +180,7 @@ def prune_online_data(stamp=None):
                 )
             )
             for job in jobs:
-                with checkpoint_store() as saver:
-                    saver.delete_thread(f"xinyu:{owner}:{job.id}")
+                delete_checkpoint_thread(f"xinyu:{owner}:{job.id}", db=db)
                 db.delete(job)
             deleted["jobs"] += len(jobs)
             if turns or imports or jobs:
@@ -224,6 +226,7 @@ def prune_online_data(stamp=None):
     ]
     for model, condition in rules:
         with Session(get_engine()) as db:
+            lock_storage(db)
             keys = list(model.__table__.primary_key.columns)
             rows = db.execute(
                 select(*keys)

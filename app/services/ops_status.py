@@ -115,8 +115,19 @@ def queue_metrics():
         return result
 
 
-def alert_findings(readiness, queues, http):
+def alert_findings(readiness, queues, http, storage=None):
     findings = []
+    if storage:
+        if storage.get("unavailable"):
+            findings.append("STORAGE_METRICS_UNAVAILABLE")
+        elif (
+            storage["used_bytes"] + storage["reserved_bytes"]
+            >= storage["limit_bytes"] * 0.9
+        ):
+            findings.append("LOGICAL_STORAGE_HIGH")
+        disk = storage.get("workspace_disk", {})
+        if disk and disk["free_bytes"] < max(2 * 1024**3, disk["total_bytes"] // 20):
+            findings.append("WORKSPACE_DISK_LOW")
     if not readiness["ready"]:
         findings.append("DEPENDENCY_NOT_READY")
     if not readiness["checks"].get("worker"):
@@ -151,6 +162,7 @@ def update_alerts(findings):
 
 def operational_status(update=False):
     from app.services.retrieval_cache import corpus_cache
+    from app.services.storage_budget import capacity_status
 
     readiness = probe_readiness()
     try:
@@ -161,7 +173,11 @@ def operational_status(update=False):
         http = http_metrics()
     except AppError:
         http = {"unavailable": True}
-    alerts = alert_findings(readiness, queues, http)
+    try:
+        storage = capacity_status()
+    except (SQLAlchemyError, OSError, RuntimeError):
+        storage = {"unavailable": True}
+    alerts = alert_findings(readiness, queues, http, storage)
     if update:
         update_alerts(alerts)
     return {
@@ -169,5 +185,6 @@ def operational_status(update=False):
         "queues": queues,
         "http": http,
         "alerts": alerts,
+        "storage": storage,
         "retrieval_cache": {"scope": "calling_process_only", **corpus_cache.stats()},
     }

@@ -25,6 +25,7 @@ from app.providers.model_provider import complete
 from app.repositories.database import get_engine
 from app.services.resource_control import ensure_active, purpose_scope
 from app.services.retrieval_cache import corpus_cache
+from app.services.storage_budget import lock_storage
 
 CHUNK_SIZE = 420
 CHUNK_OVERLAP = 70
@@ -160,6 +161,7 @@ def chunks_for(item: RelationshipItem) -> list[dict]:
 def schedule_index(db: Session, item: RelationshipItem, *, deleted: bool = False):
     if item.kind not in {"memory", "chat_log"}:
         return
+    lock_storage(db)
     corpus_cache.invalidate(cache_scope(item.owner))
     values = {
         "item_id": item.id,
@@ -215,6 +217,7 @@ def process_index() -> bool:
     """One durable outbox item; no SQL transaction is held during embedding/network calls."""
     now = datetime.now(UTC)
     with Session(get_engine(), expire_on_commit=False) as db:
+        lock_storage(db)
         job = db.scalar(
             select(RelationshipRagIndex)
             .where(
@@ -267,7 +270,9 @@ def process_index() -> bool:
                     ],
                     wait=True,
                 )
+        discard_points = False
         with Session(get_engine()) as db:
+            lock_storage(db)
             job = db.scalar(
                 select(RelationshipRagIndex)
                 .where(RelationshipRagIndex.item_id == item_id)
@@ -276,12 +281,12 @@ def process_index() -> bool:
             if job and job.error == stamp and job.revision == revision:
                 current = db.get(RelationshipItem, item_id)
                 if not current or current.status != "active":
-                    client.delete(
-                        collection_name(),
-                        models.FilterSelector(filter=source_filter(owner, item_id)),
-                        wait=True,
-                    )
-                    db.delete(job)
+                    if chunks:
+                        # Leave a durable delete request; network work is outside the SQL lock.
+                        job.status, job.error, job.attempts = "deleting", "", 0
+                        discard_points = True
+                    else:
+                        db.delete(job)
                 else:
                     job.status, job.signature = "ready", index_signature()
                     job.chunk_count, job.error, job.updated_at = (
@@ -297,14 +302,17 @@ def process_index() -> bool:
                     or job.revision != revision
                     or job.status in {"deleting", "delete_failed"}
                 ):
-                    client.delete(
-                        collection_name(),
-                        models.PointIdsList(points=[row["point_id"] for row in chunks]),
-                        wait=True,
-                    )
+                    discard_points = True
+        if discard_points:
+            client.delete(
+                collection_name(),
+                models.PointIdsList(points=[row["point_id"] for row in chunks]),
+                wait=True,
+            )
         return True
     except Exception as exc:  # noqa: BLE001 - durable background boundary, no private provider data
         with Session(get_engine()) as db:
+            lock_storage(db)
             job = db.scalar(
                 select(RelationshipRagIndex)
                 .where(RelationshipRagIndex.item_id == item_id)

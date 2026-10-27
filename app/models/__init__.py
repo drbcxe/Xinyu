@@ -16,6 +16,10 @@ from app.models.relationship import (
     RelationshipProfile,
     RelationshipRagIndex,
     RelationshipSession,
+    RelationshipStoragePolicy,
+    RelationshipStorageReservation,
+    RelationshipStorageThread,
+    RelationshipStorageTotal,
     RelationshipTurn,
     RelationshipWeixinBinding,
 )
@@ -38,6 +42,10 @@ __all__ = [
     "RelationshipProfile",
     "RelationshipRagIndex",
     "RelationshipSession",
+    "RelationshipStoragePolicy",
+    "RelationshipStorageReservation",
+    "RelationshipStorageThread",
+    "RelationshipStorageTotal",
     "RelationshipTurn",
     "RelationshipWeixinBinding",
 ]

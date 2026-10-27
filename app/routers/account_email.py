@@ -44,6 +44,7 @@ from app.services.relationship_auth import (
     revoke_sessions,
     validate_password,
 )
+from app.services.storage_budget import lock_storage
 
 router = APIRouter(
     prefix="/relationship/auth", tags=["account"], dependencies=[Depends(check_origin)]
@@ -168,6 +169,7 @@ def recovery_send(payload: RecoverySend, request: Request, db: DB, owner: Owner)
     require_smtp()
     verify_captcha(captcha_binding(request), payload.captcha_id, payload.captcha_code)
     mail_rate(address(request), payload.email)
+    lock_storage(db)
     account = db.scalar(
         select(RelationshipAccount)
         .where(RelationshipAccount.username == payload.username.lower())
@@ -192,6 +194,7 @@ def recovery_send(payload: RecoverySend, request: Request, db: DB, owner: Owner)
 def recovery_verify(payload: RecoveryVerify, request: Request, db: DB, owner: Owner):
     auth_rate(request)
     validate_password(payload.new_password, payload.confirm_password)
+    lock_storage(db)
     account = db.scalar(
         select(RelationshipAccount)
         .where(RelationshipAccount.username == payload.username.lower())

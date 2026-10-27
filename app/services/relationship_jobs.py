@@ -20,10 +20,12 @@ from app.models.relationship import (
     RelationshipTurn,
 )
 from app.repositories.database import get_engine
+from app.services.auth_cache import auth_cache
 from app.services.privacy_policy import require_processing
 from app.services.relationship_agent import run_agent
-from app.services.resource_control import admit_request, operation_scope
+from app.services.resource_control import admit_request, check_storage, operation_scope
 from app.services.runtime_state import write_progress
+from app.services.storage_budget import lock_storage
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,7 @@ def get_profile(db: Session, owner: str):
     existing = db.get(RelationshipProfile, owner)
     if existing:
         return existing
+    lock_storage(db)
     db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:owner,718302620))"),
         {"owner": owner},
@@ -61,6 +64,7 @@ def enqueue(
     ip_scope: str = "local",
 ):
     get_profile(db, owner)
+    lock_storage(db)
     profile = db.scalar(
         select(RelationshipProfile)
         .where(RelationshipProfile.owner == owner)
@@ -100,6 +104,11 @@ def enqueue(
             "当前任务较多，请等待已有任务完成后重试",
             {"retry_after_seconds": 10},
         )
+    check_storage(
+        db,
+        owner,
+        added_bytes=len(content.encode()) + settings.job_storage_reserve_bytes + 1500,
+    )
     admit_request(db, owner, ip_scope, "advice")
     now = datetime.now(UTC)
     db.execute(
@@ -150,6 +159,7 @@ def process_one() -> bool:
     settings = get_settings()
     lease_token = str(uuid4())
     with Session(get_engine()) as db:
+        lock_storage(db)
         for stale in db.scalars(
             select(RelationshipJob)
             .where(
@@ -270,6 +280,7 @@ def process_one() -> bool:
     thread = threading.Thread(target=heartbeat, name="job-lease", daemon=True)
     thread.start()
     logger.info("job_started", extra={"job_id": job_id})
+    quota_failure = False
     try:
         check_current()
         with (
@@ -294,6 +305,7 @@ def process_one() -> bool:
         check_current()
         # Only this short final transaction holds owner/job locks; network work has already finished.
         with Session(get_engine()) as db:
+            lock_storage(db)
             profile = db.scalar(
                 select(RelationshipProfile)
                 .where(RelationshipProfile.owner == owner)
@@ -336,7 +348,14 @@ def process_one() -> bool:
             db.commit()
             logger.info("job_finished", extra={"job_id": job_id})
     except Exception as exc:  # noqa: BLE001 - durable task boundary
+        quota_failure = isinstance(exc, AppError) and exc.code in {
+            "SPACE_QUOTA_EXCEEDED",
+            "GLOBAL_STORAGE_QUOTA_EXCEEDED",
+            "GRAPH_STORAGE_LIMIT",
+            "AGENT_RESULT_LIMIT",
+        }
         with Session(get_engine()) as db:
+            lock_storage(db)
             job = db.scalar(
                 select(RelationshipJob)
                 .where(RelationshipJob.id == job_id)
@@ -356,6 +375,12 @@ def process_one() -> bool:
                     "MODEL_REQUEST_REJECTED",
                     "MODEL_NOT_FOUND",
                     "MODEL_OUTPUT_LIMIT",
+                    "SPACE_QUOTA_EXCEEDED",
+                    "GLOBAL_STORAGE_QUOTA_EXCEEDED",
+                    "GRAPH_STORAGE_LIMIT",
+                    "STORAGE_POLICY_MISSING",
+                    "SPACE_COUNT_LIMIT",
+                    "AGENT_RESULT_LIMIT",
                 }:
                     retryable = False
                 retry = (
@@ -396,7 +421,7 @@ def process_one() -> bool:
                 or current.status == "cancelled"
                 or current.cancel_requested
             )
-        if cancelled:
+        if cancelled or quota_failure:
             from app.services.graph_checkpoints import checkpoint_store
 
             with checkpoint_store() as saver:
@@ -406,33 +431,62 @@ def process_one() -> bool:
 
 def dispatch_reminders() -> int:
     now = datetime.now(UTC)
+    # A full space must not monopolize every bounded batch or roll back other owners' notices.
+    with auth_cache() as cache:
+        backoff_key = "xinyu:notice:storage-backoff"
+        seconds = cache.time()[0]
+        cache.zremrangebyscore(backoff_key, "-inf", seconds)
+        blocked = cache.zrange(backoff_key, 0, -1)
     with Session(get_engine()) as db:
+        lock_storage(db)
         items = db.scalars(
             select(RelationshipItem)
             .where(
                 RelationshipItem.kind == "reminder",
                 RelationshipItem.status == "active",
                 RelationshipItem.due_at <= now,
+                RelationshipItem.owner.not_in(blocked),
+                ~select(RelationshipNotice.id)
+                .where(
+                    RelationshipNotice.item_id == RelationshipItem.id,
+                    RelationshipNotice.revision == RelationshipItem.revision,
+                )
+                .exists(),
             )
+            .order_by(RelationshipItem.due_at, RelationshipItem.id)
+            .limit(100)
             .with_for_update(skip_locked=True)
         ).all()
         count = 0
         for item in items:
-            result = db.execute(
-                insert(RelationshipNotice)
-                .values(
-                    id=str(uuid4()),
-                    owner=item.owner,
-                    item_id=item.id,
-                    revision=item.revision,
-                    title=item.title,
-                    status="unread",
-                    weixin_status="not_connected",
-                    error="",
-                    created_at=now,
-                )
-                .on_conflict_do_nothing(index_elements=["item_id", "revision"])
-            )
-            count += result.rowcount
+            try:
+                with db.begin_nested():
+                    result = db.execute(
+                        insert(RelationshipNotice)
+                        .values(
+                            id=str(uuid4()),
+                            owner=item.owner,
+                            item_id=item.id,
+                            revision=item.revision,
+                            title=item.title,
+                            status="unread",
+                            weixin_status="not_connected",
+                            error="",
+                            created_at=now,
+                        )
+                        .on_conflict_do_nothing(index_elements=["item_id", "revision"])
+                        .returning(RelationshipNotice.id)
+                    )
+                    count += int(result.scalar_one_or_none() is not None)
+            except AppError as exc:
+                if exc.code not in {
+                    "SPACE_QUOTA_EXCEEDED",
+                    "GLOBAL_STORAGE_QUOTA_EXCEEDED",
+                }:
+                    raise
+                with auth_cache() as cache:
+                    cache.zadd(backoff_key, {item.owner: cache.time()[0] + 60})
+                    cache.expire(backoff_key, 120)
+                logger.warning("notice_deferred_storage_limit")
         db.commit()
         return count

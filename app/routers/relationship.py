@@ -54,6 +54,7 @@ from app.services.resource_control import (
     operation_scope,
     usage_summary,
 )
+from app.services.storage_budget import lock_storage
 
 router = APIRouter(
     prefix="/relationship", tags=["relationship"], dependencies=[Depends(check_origin)]
@@ -87,6 +88,7 @@ def item_data(item):
 
 def lock_owner(db, owner):
     get_profile(db, owner)
+    lock_storage(db)
     profile = db.scalar(
         select(RelationshipProfile)
         .where(RelationshipProfile.owner == owner)
@@ -234,6 +236,7 @@ def retry_run(run_id: UUID, request: Request, db: DB, owner: Owner):
     if job.status != "failed":
         raise AppError(409, "RUN_NOT_FAILED", "只有失败任务可以重试")
     settings = get_settings()
+    check_storage(db, owner, added_bytes=settings.job_storage_reserve_bytes + 1000)
     db.execute(text("SELECT pg_advisory_xact_lock(718302611)"))
     mine = db.scalar(
         select(func.count())
@@ -500,7 +503,6 @@ async def import_chat(
     local_operation_rate(
         owner, request.client.host if request.client else "local", "imports", 10
     )
-    lock_owner(db, owner)
     raw = await file.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024:
         raise AppError(413, "IMPORT_TOO_LARGE", "单个聊天文件最大 1 MB")
@@ -518,6 +520,7 @@ async def import_chat(
         raise AppError(422, "IMPORT_EMPTY", "文件内容为空")
     if len(text.encode()) > 1024 * 1024:
         raise AppError(413, "IMPORT_TOO_LARGE", "展开后的聊天文本最大 1 MB")
+    lock_owner(db, owner)
     check_storage(
         db,
         owner,
@@ -595,6 +598,7 @@ def retry_index(item_id: UUID, request: Request, db: DB, owner: Owner):
     local_operation_rate(
         owner, request.client.host if request.client else "local", "index-retry", 10
     )
+    lock_storage(db)
     job = db.scalar(
         select(RelationshipRagIndex)
         .where(

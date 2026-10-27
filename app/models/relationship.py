@@ -266,3 +266,35 @@ class RelationshipFeedback(Base):
     comment: Mapped[str] = mapped_column(String(1000), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipStoragePolicy(Base):
+    __tablename__ = "relationship_storage_policy"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_bytes: Mapped[int] = mapped_column(BigInteger)
+    global_bytes: Mapped[int] = mapped_column(BigInteger)
+    graph_thread_bytes: Mapped[int] = mapped_column(BigInteger)
+    job_reserve_bytes: Mapped[int] = mapped_column(BigInteger)
+    profile_limit: Mapped[int] = mapped_column(Integer)
+    emergency_bytes: Mapped[int] = mapped_column(BigInteger)
+
+
+class RelationshipStorageTotal(Base):
+    __tablename__ = "relationship_storage_totals"
+    scope: Mapped[str] = mapped_column(String(80), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), primary_key=True)
+    bytes: Mapped[int] = mapped_column(BigInteger)
+
+
+class RelationshipStorageReservation(Base):
+    __tablename__ = "relationship_storage_reservations"
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    remaining: Mapped[int] = mapped_column(BigInteger)
+
+
+class RelationshipStorageThread(Base):
+    __tablename__ = "relationship_storage_threads"
+    thread_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    bytes: Mapped[int] = mapped_column(BigInteger)

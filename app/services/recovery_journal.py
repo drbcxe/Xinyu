@@ -84,6 +84,9 @@ def record_deletion(db, owner, scope="account", target_id=None):
     } or not valid_target(scope, target_id):
         raise ValueError("Invalid deletion scope")
     # Serializes writes across API processes. One complete append + fsync precedes DB commit.
+    from app.services.storage_budget import lock_storage
+
+    lock_storage(db)
     db.execute(text("SELECT pg_advisory_xact_lock(718302655)"))
     key = backup_key(create=True)
     nonce = os.urandom(12)

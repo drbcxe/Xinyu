@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import Text, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -22,9 +22,11 @@ from app.models.relationship import (
     RelationshipDailyUsage,
     RelationshipItem,
     RelationshipModelCall,
+    RelationshipStorageTotal,
 )
 from app.repositories.database import get_engine
 from app.services.auth_cache import auth_cache, consume_rate, digest
+from app.services.storage_budget import pressure_cleanup, storage_summary
 
 SLOT_KEY = "xinyu:resources:model-slots"
 TAKE_SLOT = """
@@ -105,6 +107,8 @@ def utc_window() -> tuple[str, datetime]:
 
 
 def locked_usage(db: Session, scope: str, day: str) -> RelationshipDailyUsage:
+    # All accounting paths acquire storage before daily-usage row locks.
+    db.execute(text("SELECT pg_advisory_xact_lock(718302612)"))
     db.execute(
         insert(RelationshipDailyUsage)
         .values(scope=scope, day=day, requests=0, reserved_tokens=0, charged_tokens=0)
@@ -177,33 +181,39 @@ def admit_request(db: Session, owner: str, ip_scope: str, purpose: str):
 def check_storage(db: Session, owner: str, added_bytes: int = 0, added_items: int = 0):
     settings = get_settings()
     db.execute(text("SELECT pg_advisory_xact_lock(718302612)"))
-    aggregate = select(
-        func.count(),
-        func.coalesce(
-            func.sum(
-                func.octet_length(RelationshipItem.title)
-                + func.octet_length(RelationshipItem.quote)
-                + func.octet_length(RelationshipItem.details.cast(Text))
-            ),
-            0,
-        ),
+    pressure_cleanup(db, owner, added_bytes)
+    aggregate = select(func.count()).select_from(RelationshipItem)
+    count = db.scalar(aggregate.where(RelationshipItem.owner == owner))
+    current = storage_summary(db, owner)
+    used = current["used_bytes"] + current["reserved_bytes"]
+    owner_headroom = min(
+        settings.storage_emergency_bytes, settings.owner_storage_bytes // 20
     )
-    count, used = db.execute(aggregate.where(RelationshipItem.owner == owner)).one()
     if (
         count + added_items > settings.owner_item_limit
-        or used + added_bytes > settings.owner_storage_bytes
+        or used + added_bytes > settings.owner_storage_bytes - owner_headroom
     ):
         raise AppError(
             413,
             "SPACE_QUOTA_EXCEEDED",
             "当前空间资料数量或容量已达上限，请先删除不需要的资料",
         )
-    total_count, total_used = db.execute(aggregate).one()
+    total_count = db.scalar(aggregate)
+    total_used = db.scalar(
+        select(func.coalesce(func.sum(RelationshipStorageTotal.bytes), 0)).where(
+            RelationshipStorageTotal.scope == "global"
+        )
+    )
+    global_headroom = min(
+        settings.storage_emergency_bytes * 128, settings.global_storage_bytes // 20
+    )
     if (
         total_count + added_items > settings.global_item_limit
-        or total_used + added_bytes > settings.global_storage_bytes
+        or total_used + added_bytes > settings.global_storage_bytes - global_headroom
     ):
-        raise AppError(503, "STORAGE_BUSY", "当前资料存储已达容量上限，请稍后再试")
+        raise AppError(
+            503, "GLOBAL_STORAGE_QUOTA_EXCEEDED", "服务存储预算已满，请稍后重试"
+        )
 
 
 def local_operation_rate(
@@ -416,6 +426,7 @@ def usage_summary(db: Session, owner: str) -> dict:
         ],
         "currency_cost": None,
         "cost_note": "Token 包含保守预留记账；未配置供应商价格时不展示金额",
+        "storage": storage_summary(db, owner),
     }
 
 

@@ -30,6 +30,7 @@ from app.providers.model_provider import complete
 from app.repositories.database import get_engine
 from app.services.agent_clock import frozen_clock
 from app.services.auth_cache import digest
+from app.services.graph_checkpoints import clear_checkpoints
 from app.services.observability import configure_logging
 from app.services.relationship_agent import json_object, run_agent
 from app.services.relationship_auth import hash_password
@@ -130,6 +131,7 @@ def prepare_case(case, owner, dataset, run_id, previous_ids):
         db.execute(
             RelationshipTurn.__table__.delete().where(RelationshipTurn.owner == owner)
         )
+        clear_checkpoints(owner, db=db)
         for i, record in enumerate(case.records):
             value = record.text
             if record.long_anchor:

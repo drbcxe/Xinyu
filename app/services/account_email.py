@@ -26,6 +26,7 @@ from app.models.relationship import (
 )
 from app.repositories.database import get_engine
 from app.services.auth_cache import answer_digest, consume_rate, digest
+from app.services.storage_budget import lock_storage
 
 TTL = 600
 logger = logging.getLogger(__name__)
@@ -137,6 +138,7 @@ def invalidate_challenges(db: Session, owner: str, purpose: str | None = None):
 def queue_challenge(
     db: Session, account: RelationshipAccount, binding: str, purpose: str, email: str
 ) -> str:
+    lock_storage(db)
     # Account lock precedes this global admission lock. Network I/O is performed by the worker later.
     db.execute(text("SELECT pg_advisory_xact_lock(718302613)"))
     pending = db.scalar(
@@ -196,6 +198,7 @@ def verify_challenge(
     purpose: str,
     code: str,
 ) -> RelationshipEmailChallenge:
+    lock_storage(db)
     challenge = db.scalar(
         select(RelationshipEmailChallenge)
         .where(RelationshipEmailChallenge.id == challenge_id)
@@ -264,6 +267,7 @@ def process_email() -> bool:
         return False
     now, token = datetime.now(UTC), str(uuid4())
     with Session(get_engine()) as db:
+        lock_storage(db)
         db.execute(
             update(RelationshipEmailOutbox)
             .where(
@@ -318,6 +322,7 @@ def process_email() -> bool:
             extra={"mail_id": entry_id, "error_type": type(exc).__name__},
         )
     with Session(get_engine()) as db:
+        lock_storage(db)
         row = db.scalar(
             select(RelationshipEmailOutbox)
             .where(

@@ -32,14 +32,26 @@ from app.services.recovery_journal import record_deletion
 from app.services.relationship_auth import revoke_sessions
 from app.services.relationship_rag import cache_scope, schedule_index
 from app.services.retrieval_cache import corpus_cache
+from app.services.storage_budget import lock_storage
 
 
 def purge_content(db: Session, owner: str):
     record_deletion(db, owner, "content")
     corpus_cache.invalidate(cache_scope(owner))
-    for item in db.scalars(
-        select(RelationshipItem).where(RelationshipItem.owner == owner)
+    items = list(
+        db.scalars(select(RelationshipItem).where(RelationshipItem.owner == owner))
+    )
+    clear_checkpoints(owner, db=db)
+    # Free large owned payloads before writing durable vector-deletion tombstones.
+    for model in (
+        RelationshipJob,
+        RelationshipNotice,
+        RelationshipFeedback,
+        RelationshipItem,
+        RelationshipTurn,
     ):
+        db.execute(model.__table__.delete().where(model.owner == owner))
+    for item in items:
         schedule_index(db, item, deleted=True)
     for index in db.scalars(
         select(RelationshipRagIndex).where(RelationshipRagIndex.owner == owner)
@@ -50,18 +62,10 @@ def purge_content(db: Session, owner: str):
             0,
             datetime.now(UTC),
         )
-    clear_checkpoints(owner)
-    for model in (
-        RelationshipJob,
-        RelationshipNotice,
-        RelationshipFeedback,
-        RelationshipItem,
-        RelationshipTurn,
-    ):
-        db.execute(model.__table__.delete().where(model.owner == owner))
 
 
 def close_account(db: Session, owner: str) -> str:
+    lock_storage(db)
     # Insertion of a missing profile and account deletion share the same advisory lock.
     db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:owner,718302620))"),

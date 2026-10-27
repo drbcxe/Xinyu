@@ -45,6 +45,7 @@ from app.services.relationship_auth import (
 )
 from app.services.relationship_jobs import get_profile
 from app.services.resource_control import local_operation_rate
+from app.services.storage_budget import lock_storage
 
 router = APIRouter(
     prefix="/relationship", tags=["privacy"], dependencies=[Depends(check_origin)]
@@ -83,6 +84,7 @@ def get_privacy(db: DB, owner: Owner):
 def set_privacy(payload: PrivacyInput, request: Request, db: DB, owner: Owner):
     local_operation_rate(owner, address(request), "privacy", 20)
     get_profile(db, owner)
+    lock_storage(db)
     profile = db.scalar(
         select(RelationshipProfile)
         .where(RelationshipProfile.owner == owner)
@@ -167,6 +169,8 @@ def get_deletion_status(payload: ReceiptInput, request: Request, db: DB):
 
 
 def own_turn(db, owner, turn_id, lock=False):
+    if lock:
+        lock_storage(db)
     profile = (
         db.scalar(
             select(RelationshipProfile)

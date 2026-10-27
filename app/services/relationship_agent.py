@@ -389,6 +389,15 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
         report_progress("finalize", state.get("model_steps", 0))
         ensure_active()
         started = time.monotonic()
+        if (
+            len(json.dumps(state["result"], ensure_ascii=False).encode())
+            > get_settings().agent_result_bytes
+        ):
+            raise AppError(
+                413,
+                "AGENT_RESULT_LIMIT",
+                "建议与引用内容超过本次结果容量，请缩小问题范围",
+            )
         traces = trace(state, "finalize", started)
         return {
             "result": {
@@ -477,7 +486,9 @@ def _run_agent_graph(db, owner, content, mode, request_id):
             state = snapshot.values
         else:
             state = graph.invoke(
-                None if resumed else {"content": content, "mode": mode}, config
+                None if resumed else {"content": content, "mode": mode},
+                config,
+                durability="sync",
             )
         result = state.get("result")
         if not result:

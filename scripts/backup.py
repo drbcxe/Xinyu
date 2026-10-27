@@ -359,7 +359,7 @@ def suppress_deleted(conn, owners):
     if not owners:
         return 0
     for schema, table in conn.execute(
-        "SELECT table_schema, table_name FROM information_schema.columns WHERE column_name='owner' AND table_schema='public' AND table_name LIKE 'relationship_%'"
+        "SELECT table_schema, table_name FROM information_schema.columns WHERE column_name='owner' AND table_schema='public' AND table_name LIKE 'relationship_%' AND table_name NOT LIKE 'relationship_storage_%'"
     ).fetchall():
         if table == "relationship_closed_spaces":
             continue
@@ -635,6 +635,8 @@ def drill(folder, journal=None):
         with connect(database) as conn:
             if fingerprints(conn) != manifest["database_fingerprints"]:
                 raise ValueError("Restored database does not match the saved snapshot")
+            # This session owns only the fresh restore DB; still account every change, but allow cleanup over old caps.
+            conn.execute("SELECT set_config('xinyu.storage_bypass','on',true)")
             encrypted_records = validate_private_records(conn, restored_keys)
             intents.extend(read_intents(journal, key))
             accounts, vector_owners, vector_items = apply_intents(conn, intents)
@@ -656,6 +658,10 @@ def drill(folder, journal=None):
                     (owner,),
                 ).fetchone()[0]:
                     raise ValueError("Deleted owner survived restoration")
+            if conn.execute(
+                "SELECT to_regprocedure('public.xinyu_storage_rebuild()')"
+            ).fetchone()[0]:
+                conn.execute("SELECT public.xinyu_storage_rebuild()")
             conn.commit()
         vector_results = {}
         with vector_client() as client:

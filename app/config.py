@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, PositiveInt, SecretStr
+from pydantic import Field, PositiveInt, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     owner_item_limit: PositiveInt = 500
     global_storage_bytes: PositiveInt = 512 * 1024 * 1024
     global_item_limit: PositiveInt = 20000
+    graph_thread_storage_bytes: PositiveInt = 4 * 1024 * 1024
+    agent_result_bytes: PositiveInt = 1024 * 1024
+    job_storage_reserve_bytes: PositiveInt = 6 * 1024 * 1024
+    global_profile_limit: PositiveInt = 10000
+    storage_emergency_bytes: PositiveInt = 65536
     model_call_input_limit: PositiveInt = 60000
     model_budget_per_request: PositiveInt = 160000
     model_calls_per_request: PositiveInt = 24
@@ -63,6 +68,17 @@ class Settings(BaseSettings):
     database_connect_timeout: int = Field(default=5, ge=1, le=30)
     database_statement_timeout_ms: int = Field(default=30000, ge=1000, le=120000)
     backup_key_file: str = ""
+
+    @model_validator(mode="after")
+    def storage_reserve_covers_execution(self):
+        if (
+            self.job_storage_reserve_bytes
+            < self.graph_thread_storage_bytes + self.agent_result_bytes + 131072
+        ):
+            raise ValueError(
+                "JOB_STORAGE_RESERVE_BYTES must cover graph, result and input/metadata headroom"
+            )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

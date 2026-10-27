@@ -107,6 +107,7 @@ def backend(infrastructure, monkeypatch):
     from app.services import recovery_journal
     from app.services.auth_cache import get_redis
     from app.services.retrieval_cache import corpus_cache
+    from app.services.storage_budget import configure_storage
 
     get_engine.cache_clear()
     corpus_cache.clear(reset=True)
@@ -134,6 +135,7 @@ def backend(infrastructure, monkeypatch):
             conn.execute(table.delete())
         for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
             conn.exec_driver_sql(f"DELETE FROM xinyu_graph.{table}")
+    configure_storage(force_rebuild=True)
     cache = get_redis()
     keys = [key for key in cache.scan_iter("xinyu:*") if key != "xinyu:test-lock"]
     if keys:

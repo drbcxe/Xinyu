@@ -252,6 +252,7 @@
   .love-user { margin-left: 5%; padding: 16px 18px; }.love-answer { padding: 0; }.love-modal-backdrop { padding: 16px; }.love-modal { padding: 25px; border-radius: 17px; max-height: 85vh; }.love-modal-actions { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { .love-app * { transition: none !important; }.love-app .love-starters button:hover { transform: none; } }
+.love-usage { grid-column: 1 / -1; }
 .love-usage-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 20px 0; }
 .love-usage-meters label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
 .love-usage-meters strong { color: #6c4d91; font-variant-numeric: tabular-nums; }
@@ -267,3 +268,10 @@
 .love-feedback select, .love-feedback textarea { border: 1px solid #e3dbe9; border-radius: 9px; padding: 9px; background: white; color: #493e58; font: inherit; }
 .love-feedback small { display: block; color: #8e8298; margin-top: 10px; line-height: 1.7; }
 .love-feedback fieldset > div { display: flex; gap: 10px; flex-wrap: wrap; }
+.love-storage { margin-top: 22px; padding-top: 18px; border-top: 1px solid #e9e3ef; }
+.love-storage h3 { font-size: 15px; margin-bottom: 12px; }
+.love-storage .love-usage-meters { grid-template-columns: 1fr; }
+.love-storage dl { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: 12px; margin: 14px 0; font-size: 12px; }
+.love-storage dl > div { padding: 10px 12px; background: #f8f5fc; border-radius: 9px; }
+.love-storage dt { color: #82728d; }
+.love-storage dd { margin: 5px 0 0; color: #4c3c5c; font-weight: 600; }
