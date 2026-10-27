@@ -15,17 +15,19 @@ from app.models.relationship import (
     RelationshipItem,
     RelationshipJob,
     RelationshipNotice,
+    RelationshipPrivacy,
     RelationshipProfile,
     RelationshipTurn,
     RelationshipWeixinBinding,
 )
 from app.services.auth_cache import digest
+from app.services.privacy_policy import POLICY_VERSION, provider_fingerprint
 from app.services.relationship_jobs import job_data
 from app.services.runtime_state import job_progress, worker_count
 
 
 def snapshot_version(db: Session, owner: str) -> str:
-    parts = [owner]
+    parts = [owner, POLICY_VERSION, provider_fingerprint()]
     for model, fields in [
         (RelationshipTurn, [func.count(), func.max(RelationshipTurn.created_at)]),
         (
@@ -62,10 +64,20 @@ def snapshot_version(db: Session, owner: str) -> str:
         select(RelationshipAccount.username).where(RelationshipAccount.owner == owner)
     )
     binding = db.get(RelationshipWeixinBinding, owner)
+    privacy = db.get(RelationshipPrivacy, owner)
     parts += [
         (profile.partner_name, profile.style) if profile else None,
         account,
         (binding.status, binding.updated_at) if binding else None,
+        (
+            privacy.version,
+            privacy.provider_fingerprint,
+            privacy.accepted_at,
+            privacy.revoked_at,
+            privacy.history_days,
+        )
+        if privacy
+        else None,
     ]
     return digest(repr(parts))
 

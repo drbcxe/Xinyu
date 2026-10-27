@@ -14,12 +14,14 @@ from app.errors import AppError
 from app.main import app
 from app.models.relationship import (
     RelationshipJob,
+    RelationshipPrivacy,
     RelationshipProfile,
     RelationshipTurn,
 )
 from app.repositories.database import get_engine
 from app.services import relationship_agent, relationship_jobs
 from app.services.graph_checkpoints import checkpoint_store
+from app.services.privacy_policy import POLICY_VERSION, provider_fingerprint
 from app.services.relationship_auth import COOKIE, token_hash
 from app.services.relationship_jobs import enqueue, process_one
 from app.services.resource_control import usage_summary
@@ -29,6 +31,17 @@ def create_job(owner=None, request_id=None, content="synthetic question"):
     owner = owner or secrets.token_hex(32)
     request_id = request_id or str(uuid4())
     with Session(get_engine()) as db:
+        if not db.get(RelationshipPrivacy, owner):
+            db.add(
+                RelationshipPrivacy(
+                    owner=owner,
+                    version=POLICY_VERSION,
+                    provider_fingerprint=provider_fingerprint(),
+                    accepted_at=datetime.now(UTC),
+                    history_days=90,
+                )
+            )
+            db.commit()
         job = enqueue(db, owner, request_id, content, ip_scope="test-" + owner)
         value = job.id
     return owner, value, request_id

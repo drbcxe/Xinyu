@@ -18,6 +18,7 @@ from app.models.relationship import (
     RelationshipItem,
     RelationshipJob,
     RelationshipNotice,
+    RelationshipPrivacy,
     RelationshipProfile,
     RelationshipRagIndex,
     RelationshipSession,
@@ -83,6 +84,7 @@ def close_account(db: Session, owner: str) -> str:
         RelationshipEmailChallenge,
         RelationshipAuthEvent,
         RelationshipWeixinBinding,
+        RelationshipPrivacy,
     ):
         db.execute(model.__table__.delete().where(model.owner == owner))
     db.execute(

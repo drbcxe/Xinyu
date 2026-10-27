@@ -5,12 +5,14 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.errors import AppError
 from app.models.relationship import (
     RelationshipFeedback,
+    RelationshipJob,
+    RelationshipPrivacy,
     RelationshipProfile,
     RelationshipTurn,
 )
@@ -21,6 +23,11 @@ from app.services.auth_cache import (
     digest,
     record_failure,
     verify_captcha,
+)
+from app.services.privacy_policy import (
+    POLICY_VERSION,
+    privacy_status,
+    provider_fingerprint,
 )
 from app.services.relationship_auth import (
     DB,
@@ -56,6 +63,72 @@ class FeedbackInput(BaseModel):
     rating: Literal["helpful", "unhelpful"]
     category: Literal["general", "inaccurate", "tone", "unsafe", "bug"] = "general"
     comment: str = Field(default="", max_length=1000)
+
+
+class PrivacyInput(BaseModel):
+    version: str = Field(max_length=40)
+    provider_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    allow_model_processing: bool
+    history_days: Literal[30, 90, 180] = 90
+
+
+@router.get("/privacy")
+def get_privacy(db: DB, owner: Owner):
+    get_profile(db, owner)
+    return privacy_status(db, owner)
+
+
+@router.put("/privacy")
+def set_privacy(payload: PrivacyInput, request: Request, db: DB, owner: Owner):
+    local_operation_rate(owner, address(request), "privacy", 20)
+    get_profile(db, owner)
+    profile = db.scalar(
+        select(RelationshipProfile)
+        .where(RelationshipProfile.owner == owner)
+        .with_for_update()
+    )
+    if not profile:
+        raise AppError(401, "SPACE_CLOSED", "空间已关闭，请刷新")
+    if (
+        payload.version != POLICY_VERSION
+        or payload.provider_fingerprint != provider_fingerprint()
+    ):
+        raise AppError(
+            409,
+            "PRIVACY_POLICY_CHANGED",
+            "数据处理说明或模型配置已更新，请刷新后重新阅读",
+        )
+    row = db.get(RelationshipPrivacy, owner)
+    if not row:
+        row = RelationshipPrivacy(owner=owner)
+        db.add(row)
+    now = datetime.now(UTC)
+    row.version, row.provider_fingerprint, row.history_days = (
+        POLICY_VERSION,
+        provider_fingerprint(),
+        payload.history_days,
+    )
+    if payload.allow_model_processing:
+        row.accepted_at, row.revoked_at = now, None
+    else:
+        row.revoked_at = now
+        db.execute(
+            update(RelationshipJob)
+            .where(
+                RelationshipJob.owner == owner,
+                RelationshipJob.status.in_(["queued", "running"]),
+            )
+            .values(
+                status="cancelled",
+                cancel_requested=True,
+                lease_token=None,
+                lease_expires_at=None,
+                updated_at=now,
+                error="AI 数据处理授权已撤回",
+            )
+        )
+    db.commit()
+    return privacy_status(db, owner)
 
 
 @router.delete("/auth/account", status_code=202)

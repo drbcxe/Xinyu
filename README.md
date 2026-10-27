@@ -77,5 +77,6 @@ pnpm dev
 - [工程化完整范围与进度](./docs/enterprise-readiness.md)
 - [运行状态、日志与告警](./docs/observability.md)
 - [Agent 质量评测与版本比较](./docs/agent-evaluation.md)
+- [AI 数据处理选择与保留期限](./docs/privacy-retention.md)
 
 仓库：[drbcxe/Xinyu](https://github.com/drbcxe/Xinyu)。

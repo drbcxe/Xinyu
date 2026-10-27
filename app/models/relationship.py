@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     DateTime,
     Index,
     Integer,
@@ -23,6 +24,25 @@ class RelationshipProfile(Base):
     style: Mapped[str] = mapped_column(
         String(500), default="自然、简短，不要油腻或说教"
     )
+
+
+class RelationshipPrivacy(Base):
+    __tablename__ = "relationship_privacy"
+    __table_args__ = (
+        CheckConstraint(
+            "history_days IN (30, 90, 180)", name="ck_privacy_history_days"
+        ),
+    )
+    owner: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[str] = mapped_column(String(40), default="")
+    provider_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    history_days: Mapped[int] = mapped_column(Integer, default=90)
 
 
 class RelationshipTurn(Base):

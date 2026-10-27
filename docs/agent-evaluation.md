@@ -52,4 +52,8 @@ CI 执行纯评分器及真实 PostgreSQL/Redis/Qdrant 集成回归；用确定�
 
 首次 50 案例检索预览的 13 条标注中，混合检索 Recall@3 为 0.615，BM25 为 0.462；混合检索 Precision 为 0.372，BM25 为 0.423。召回提升伴随噪声增加，这不是质量全部达标的证明，后续检索优化必须同时观察召回、精度和延迟。
 
+修复后真实模型：开发集完成 **30/30**，预留集完成 **20/20**；所有请求均完成规则检查，必要工具轨迹通过，模型评审覆盖分别 30/30 和 20/20。开发集记账 122,211 Token，预留集 64,852 Token；开发集相对首轮少 10,178 Token，仅为该次观测，不能视为普遍节省比例。预留集带检索标注的 5 个案例中，混合召回为 **0.4**，资料依据的模型评分为 **1.7/2**，仍存在检索和依据质量限制。
+
+仅含汇总的可提交证据见 [evaluation-results.json](./evaluation-results.json)。两组运行的 Python 源码哈希相同，且已经逐文件核对对应 Git 提交 `8d1172f`；部分运行开始于提交前，因此保留原始 `git_revision`/`git_dirty`，不改写运行历史。本轮数据处理授权新增后没有重新消耗模型额度刷同一预留集，该功能另由集成回归验证。
+
 参考：[AgentEvals](https://github.com/langchain-ai/agentevals)、[LongMemEval](https://github.com/xiaowu0162/LongMemEval)。本项目只集成 AgentEvals 的轨迹评分器，并参考长期记忆评测维度；没有声称运行 Ragas 或上述官方完整基准。

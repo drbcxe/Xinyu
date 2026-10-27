@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import Icon from '../components/Icon'
 import AuthDialog from '../components/AuthDialog'
 import UsagePanel from '../components/UsagePanel'
+import PrivacyPanel from '../components/PrivacyPanel'
 import FeedbackControls from '../components/FeedbackControls'
 import KnowledgePanel, { SourceCards } from '../components/KnowledgePanel'
 import { api, localDate, toolNames } from '../relationshipApi'
@@ -118,6 +119,7 @@ export default function RelationshipPage() {
 
   const pending = state?.jobs.filter(job => job.status === 'queued' || job.status === 'running') ?? []
   const busy = submitting || pending.length > 0
+  const aiEnabled = Boolean(state?.privacy?.accepted)
   const unread = state?.notices.filter(message => message.status === 'unread') ?? []
   const allTurns = [...older, ...(state?.turns ?? [])].filter((turn, index, array) => array.findIndex(t => t.id === turn.id) === index)
 
@@ -128,6 +130,7 @@ export default function RelationshipPage() {
 
   async function send(content: string, mode: 'chat' | 'date' = 'chat') {
     if (!content.trim() || busy) return
+    if (!aiEnabled) { setError('请先阅读并确认 AI 数据处理说明。'); return }
     setSubmitting(true); setError(''); setNotice('')
     requestKey.current ??= crypto.randomUUID()
     try {
@@ -245,6 +248,7 @@ export default function RelationshipPage() {
         {!!unread.length && tab !== 'reminders' && <NavLink className="love-due" to="/assistant/reminders">◷ 有 {unread.length} 条未读提醒：{unread[0].title}</NavLink>}
         {!state && <div className="love-empty"><p>正在连接你的空间…</p><button onClick={() => { void reloadSpace().catch(err => setError(err.message)) }}>重新连接</button></div>}
         {state && tab === 'knowledge' && <KnowledgePanel key={state.account.username ?? 'guest'} />}
+        {state?.privacy && (tab === 'chat' || tab === 'dates') && !aiEnabled && <PrivacyPanel key={`${state.account.username ?? 'guest'}-${state.privacy.provider_fingerprint}-${state.privacy.accepted}`} value={state.privacy} compact onRefresh={refresh} />}
 
         {state && tab === 'chat' && <>
           {!allTurns.length && <section className="love-welcome"><div className="love-hero-main"><div className="love-hero-copy"><div className="love-hero-pill"><Icon name="spark" />为真实的关系，多想一步</div><h1>好好沟通，<br /><span>从这里开始。</span></h1><p>一起读懂聊天里的在意，<br />找到自然的表达，记住值得用心的小事。</p></div><div className="love-hero-art" aria-hidden="true"><div className="love-art-orbit" /><div className="love-art-orbit second" /><div className="love-art-heart"><Icon name="heart" /></div><span className="love-art-chip first"><Icon name="chat" />理解语境</span><span className="love-art-chip second"><Icon name="memory" />记住偏好</span><i className="love-art-dot one" /><i className="love-art-dot two" /></div></div><div className="love-starters">{[{ title: '这句话，怎么回？', detail: '理清语境，找到自然表达', icon: 'chat' as const, value: '帮我看看这段聊天，怎么回复更自然？' }, { title: '把误会，好好说开', detail: '理解分歧，表达真实想法', icon: 'heart' as const, value: '我想解释一次误会，但不知道怎么开口。' }, { title: '重要的事，别忘了', detail: '记下约定，把关心放进行动', icon: 'bell' as const, value: '她下周有重要面试，我想记下来。' }].map(item => <button key={item.title} onClick={() => { setText(item.value); requestKey.current = null }}><span className="love-starter-icon"><Icon name={item.icon} /></span><strong>{item.title}</strong><small>{item.detail}</small><Icon name="arrow" /></button>)}</div></section>}
@@ -254,8 +258,8 @@ export default function RelationshipPage() {
           <div ref={endRef} />
           <form className={`love-composer${allTurns.length ? ' has-history' : ''}`} onSubmit={event => { event.preventDefault(); void send(text) }}>
             <div className="love-composer-heading"><Icon name="spark" /><span>说说发生了什么</span><small>你的私人沟通助手</small></div><label htmlFor="love-input" className="love-sr-only">聊天内容</label><textarea id="love-input" rows={3} value={text} disabled={busy} maxLength={16000} onChange={event => { setText(event.target.value); requestKey.current = null }} placeholder="粘贴你们的聊天，标注「我 / 对方」，或直接告诉我你的困惑…" />
-            {!!images.length && <div className="love-attachments">{images.map((image, index) => <button type="button" disabled={saving} key={index} onClick={() => setImages(current => current.filter((_, i) => i !== index))}><img src={image.url} alt={image.name} />移除</button>)}<button type="button" disabled={saving || !state.supports_images} onClick={() => void transcribeImages()}>{saving ? '正在识别…' : '识别截图 → 核对文字'}</button></div>}
-            <div className="love-composer-actions"><label className={state.supports_images ? 'love-upload' : 'love-upload disabled'}><Icon name="upload" />{state.supports_images ? '上传聊天截图' : '截图待配置'}<input type="file" hidden accept="image/png,image/jpeg" multiple disabled={!state.supports_images || busy || saving} onChange={event => { void readImages(event.target.files); event.target.value = '' }} /></label><span className="love-composer-hint">截图先核对，再分析</span><button className="love-primary" disabled={!text.trim() || busy || !state.worker_online} type="submit">{busy ? '后台处理中…' : '发送'}<Icon name="send" /></button></div><small>由已配置的 AI 模型分析内容。每一条建议，都由你决定。</small>
+            {!!images.length && <div className="love-attachments">{images.map((image, index) => <button type="button" disabled={saving} key={index} onClick={() => setImages(current => current.filter((_, i) => i !== index))}><img src={image.url} alt={image.name} />移除</button>)}<button type="button" disabled={saving || !state.supports_images || !aiEnabled} onClick={() => void transcribeImages()}>{saving ? '正在识别…' : '识别截图 → 核对文字'}</button></div>}
+            <div className="love-composer-actions"><label className={state.supports_images ? 'love-upload' : 'love-upload disabled'}><Icon name="upload" />{state.supports_images ? '上传聊天截图' : '截图待配置'}<input type="file" hidden accept="image/png,image/jpeg" multiple disabled={!state.supports_images || busy || saving} onChange={event => { void readImages(event.target.files); event.target.value = '' }} /></label><span className="love-composer-hint">截图先核对，再分析</span><button className="love-primary" disabled={!text.trim() || busy || !state.worker_online || !aiEnabled} type="submit">{busy ? '后台处理中…' : '发送'}<Icon name="send" /></button></div><small>由已配置的 AI 模型分析内容。每一条建议，都由你决定。</small>
           </form>
         </>}
 
@@ -274,7 +278,7 @@ export default function RelationshipPage() {
             <label>两人总预算（元）<input required type="number" min={1} max={100000} value={planForm.budget} onChange={event => { setPlanForm({ ...planForm, budget: event.target.value }); requestKey.current = null }} /></label>
             <label>约会日期与时间<input required type="datetime-local" value={planForm.when} onChange={event => { setPlanForm({ ...planForm, when: event.target.value }); requestKey.current = null }} /></label>
             <label>偏好与限制<input maxLength={1000} value={planForm.preferences} onChange={event => { setPlanForm({ ...planForm, preferences: event.target.value }); requestKey.current = null }} placeholder="例如：安静、室内、步行少一点" /></label>
-            <button className="love-primary" disabled={busy || !state.worker_online}>{busy ? '后台规划中…' : '结合偏好，生成方案'}</button>
+            <button className="love-primary" disabled={busy || !state.worker_online || !aiEnabled}>{busy ? '后台规划中…' : '结合偏好，生成方案'}</button>
           </form>
           {!!pending.length && <p className="love-thinking">规划任务正在后台处理，完成后会显示在下方和聊天记录中。</p>}
           <h2 className="love-subheading">已保存方案</h2>
@@ -285,6 +289,7 @@ export default function RelationshipPage() {
 
         {state && tab === 'settings' && <section className="love-settings">
           <div className="love-eyebrow">MAKE IT FEEL LIKE YOU</div><h1>让建议，更像你。</h1>
+          {state.privacy && <PrivacyPanel key={`${state.account.username ?? 'guest'}-${state.privacy.provider_fingerprint}-${state.privacy.accepted}`} value={state.privacy} onRefresh={refresh} />}
           <UsagePanel />
           <form onSubmit={event => { event.preventDefault(); void task(async () => { await api('/profile', 'PUT', profile); await refresh(); setNotice('偏好已保存，下一轮生效。') }) }}><label>伴侣称呼<input required maxLength={80} value={profile.partner_name} onChange={event => setProfile({ ...profile, partner_name: event.target.value })} /></label><label>你希望怎样表达<textarea required maxLength={500} rows={4} value={profile.style} onChange={event => setProfile({ ...profile, style: event.target.value })} /></label><button className="love-primary" disabled={saving}>保存偏好</button></form>
           <div className="love-settings-note"><h2>账号与数据</h2><p>{state.account.username ? `当前账号：${state.account.username}。在其他设备登录同一后端的账号，即可打开同一空间。` : '当前为访客空间。注册账号会保留当前记录；在其他设备登录后可访问同一空间。'}</p><button disabled={busy} onClick={() => setAuthMode('register')}>{state.account.username ? '管理账号' : '注册 / 登录'}</button><a className="love-export" href="/api/relationship/export" download>导出我的数据</a></div>

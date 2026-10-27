@@ -8,6 +8,7 @@ from uuid import uuid4
 from app.config import get_settings
 from app.services.account_closure import reconcile_closed_spaces
 from app.services.account_email import process_email
+from app.services.data_retention import prune_online_data
 from app.services.observability import configure_logging
 from app.services.ops_status import operational_status
 from app.services.relationship_jobs import dispatch_reminders, process_one
@@ -57,6 +58,7 @@ def main():
                         for action in (
                             reconcile_abandoned_calls,
                             reconcile_closed_spaces,
+                            prune_online_data,
                         ):
                             try:
                                 action()

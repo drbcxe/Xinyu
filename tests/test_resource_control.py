@@ -11,10 +11,12 @@ from app.errors import AppError
 from app.models.relationship import (
     RelationshipDailyUsage,
     RelationshipModelCall,
+    RelationshipPrivacy,
     RelationshipProfile,
 )
 from app.repositories.database import get_engine
 from app.services.auth_cache import get_redis
+from app.services.privacy_policy import POLICY_VERSION, provider_fingerprint
 from app.services.resource_control import (
     SLOT_KEY,
     admit_request,
@@ -34,6 +36,15 @@ def owner():
     with Session(get_engine()) as db:
         db.add(
             RelationshipProfile(owner=value, partner_name="fixture", style="fixture")
+        )
+        db.add(
+            RelationshipPrivacy(
+                owner=value,
+                version=POLICY_VERSION,
+                provider_fingerprint=provider_fingerprint(),
+                accepted_at=datetime.now(UTC),
+                history_days=90,
+            )
         )
         db.commit()
     return value

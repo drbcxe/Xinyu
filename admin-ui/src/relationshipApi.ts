@@ -10,7 +10,8 @@ export type Item = { id: string; kind: 'memory' | 'reminder' | 'date_plan' | 'ch
 export type Job = { id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; error: string; turn_id: string | null; created_at: string; attempts: number; cancel_requested: boolean; available_at: string; progress?: { node: string; model_step: number } | null }
 export type Notice = { id: string; title: string; status: string; weixin_status: string; error: string; created_at: string }
 export type Profile = { partner_name: string; style: string }
-export type State = { version: string; history_has_more: boolean; item_counts: Record<string, number>; profile: Profile; turns: Turn[]; jobs: Job[]; notices: Notice[]; supports_images: boolean; server_time: string; worker_online: boolean; account: { username: string | null }; weixin: { status: string; interface_ready: boolean } }
+export type PrivacyStatus = { version: string; provider_fingerprint: string; accepted: boolean; accepted_at: string | null; revoked_at: string | null; history_days: 30 | 90 | 180; destinations: Record<'text' | 'vision', { host: string; model: string }>; disclosures: string[]; retention_note: string }
+export type State = { version: string; history_has_more: boolean; item_counts: Record<string, number>; profile: Profile; turns: Turn[]; jobs: Job[]; notices: Notice[]; supports_images: boolean; server_time: string; worker_online: boolean; account: { username: string | null }; weixin: { status: string; interface_ready: boolean }; privacy: PrivacyStatus }
 
 export class ApiError extends Error {
   code: string

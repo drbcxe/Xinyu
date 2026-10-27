@@ -9,6 +9,7 @@ import httpx
 from app.config import get_settings
 from app.errors import AppError
 from app.services.observability import request_context
+from app.services.privacy_policy import require_processing
 from app.services.resource_control import (
     ensure_active,
     estimate_input,
@@ -33,6 +34,10 @@ def model_http_client() -> httpx.Client:
 def controlled_post(
     base_url: str, headers: dict, payload: dict, timeout: float, deadline: float
 ) -> httpx.Response:
+    current = operation_context.get()
+    if current is None:
+        raise AppError(403, "MODEL_CONTEXT_REQUIRED", "模型调用缺少账号空间上下文")
+    require_processing(current.owner)
     with provider_slot(deadline):
         call_id, _ = reserve_call(
             str(payload["model"]),
@@ -87,6 +92,7 @@ def controlled_post(
                         }
                 except (ValueError, AttributeError):
                     pass
+            require_processing(current.owner)
             return response
         finally:
             settle_call(call_id, usage=usage, sent=sent, rejected=rejected)

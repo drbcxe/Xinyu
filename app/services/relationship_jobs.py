@@ -20,6 +20,7 @@ from app.models.relationship import (
     RelationshipTurn,
 )
 from app.repositories.database import get_engine
+from app.services.privacy_policy import require_processing
 from app.services.relationship_agent import run_agent
 from app.services.resource_control import admit_request, operation_scope
 from app.services.runtime_state import write_progress
@@ -67,6 +68,7 @@ def enqueue(
     )
     if not profile:
         raise AppError(401, "SPACE_CLOSED", "原账号空间已注销，请重新打开页面")
+    require_processing(owner, db)
     existing = db.scalar(
         select(RelationshipJob).where(
             RelationshipJob.owner == owner, RelationshipJob.request_id == request_id
@@ -226,6 +228,7 @@ def process_one() -> bool:
         if lost.is_set():
             raise AppError(409, "JOB_LEASE_LOST", "任务执行权已变更，旧执行已停止")
         with Session(get_engine()) as check_db:
+            require_processing(owner, check_db)
             job = check_db.get(RelationshipJob, job_id)
             if not job or job.cancel_requested or job.status == "cancelled":
                 raise AppError(409, "JOB_CANCELLED", "任务已取消")
@@ -310,6 +313,7 @@ def process_one() -> bool:
                 or job.lease_expires_at <= datetime.now(UTC)
             ):
                 return True
+            require_processing(owner, db)
             turn = db.scalar(
                 select(RelationshipTurn).where(
                     RelationshipTurn.owner == owner,

@@ -34,6 +34,7 @@ from app.schemas.relationship import (
 )
 from app.services.account_closure import purge_content
 from app.services.auth_cache import consume_rate
+from app.services.privacy_policy import privacy_status, require_processing
 from app.services.relationship_auth import Owner, check_origin
 from app.services.relationship_jobs import enqueue, get_profile, job_data
 from app.services.relationship_rag import index_status, retrieve, schedule_index
@@ -154,6 +155,7 @@ def state(db: DB, owner: Owner):
             "interface_ready": True,
         },
         "supports_images": bool(get_settings().relationship_vision_model.strip()),
+        "privacy": privacy_status(db, owner),
         "server_time": datetime.now(UTC),
     }
 
@@ -181,6 +183,7 @@ def save_profile(payload: ProfileInput, db: DB, owner: Owner):
 
 @router.post("/transcribe")
 def image_transcript(payload: ImageInput, request: Request, db: DB, owner: Owner):
+    require_processing(owner, db)
     admit_request(db, owner, request.client.host if request.client else "local", "ocr")
     db.commit()
     db.rollback()
@@ -218,6 +221,7 @@ def get_run(run_id: UUID, db: DB, owner: Owner):
 @router.post("/runs/{run_id}/retry")
 def retry_run(run_id: UUID, request: Request, db: DB, owner: Owner):
     lock_owner(db, owner)
+    require_processing(owner, db)
     consume_rate("retry:" + owner, 10, 60, "任务重试过于频繁，请稍后再试")
     job = db.scalar(
         select(RelationshipJob)
@@ -620,6 +624,7 @@ def export_data(db: DB, owner: Owner):
             {
                 "product": "Xinyu",
                 "exported_at": datetime.now(UTC),
+                "privacy": privacy_status(db, owner),
                 "profile": {
                     "partner_name": profile.partner_name,
                     "style": profile.style,
