@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from app.errors import AppError
 from app.services.observability import BUCKETS, http_metrics, ops_token
 from app.services.ops_status import operational_status, probe_readiness
+from app.services.retrieval_cache import corpus_cache
 
 router = APIRouter()
 
@@ -56,6 +57,15 @@ def metrics():
         f"xinyu_http_request_duration_seconds_count {snapshot['requests']}",
         f"xinyu_http_request_duration_seconds_sum {snapshot['duration_seconds_sum']}",
     ]
+    cached = corpus_cache.stats()
+    for metric, field, kind in [
+        ("xinyu_rag_cache_estimated_bytes", "estimated_bytes", "gauge"),
+        ("xinyu_rag_cache_entries", "entries", "gauge"),
+        ("xinyu_rag_cache_builds_total", "builds", "counter"),
+        ("xinyu_rag_cache_hits_total", "hits", "counter"),
+        ("xinyu_rag_cache_oversized_total", "oversized", "counter"),
+    ]:
+        lines.extend([f"# TYPE {metric} {kind}", f"{metric} {cached.get(field, 0)}"])
     return PlainTextResponse(
         "\n".join(lines) + "\n", media_type="text/plain; version=0.0.4"
     )

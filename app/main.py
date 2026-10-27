@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from app.routers.ops import router as ops_router
 from app.routers.relationship import router as relationship_router
 from app.services.observability import RequestTelemetry, configure_logging
 from app.services.relationship_auth import router as relationship_auth_router
+from app.services.retrieval_cache import corpus_cache
 
 
 @asynccontextmanager
@@ -23,9 +25,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     upload_temp.mkdir(parents=True, exist_ok=True)
     previous_temp = tempfile.tempdir
     tempfile.tempdir = str(upload_temp)
+
+    async def sweep_cache():
+        while True:
+            await asyncio.sleep(15)
+            corpus_cache.expire()
+
+    sweeper = asyncio.create_task(sweep_cache())
     try:
         yield
     finally:
+        sweeper.cancel()
+        await asyncio.gather(sweeper, return_exceptions=True)
+        corpus_cache.clear()
         tempfile.tempdir = previous_temp
         from app.providers.model_provider import model_http_client
 

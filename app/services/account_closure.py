@@ -30,11 +30,13 @@ from app.services.auth_cache import digest
 from app.services.graph_checkpoints import checkpoint_store, clear_checkpoints
 from app.services.recovery_journal import record_deletion
 from app.services.relationship_auth import revoke_sessions
-from app.services.relationship_rag import schedule_index
+from app.services.relationship_rag import cache_scope, schedule_index
+from app.services.retrieval_cache import corpus_cache
 
 
 def purge_content(db: Session, owner: str):
     record_deletion(db, owner, "content")
+    corpus_cache.invalidate(cache_scope(owner))
     for item in db.scalars(
         select(RelationshipItem).where(RelationshipItem.owner == owner)
     ):

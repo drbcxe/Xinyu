@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     rag_rerank_enabled: bool = True
     rag_dense_enabled: bool = True
     rag_collection_override: str = ""
+    rag_cache_bytes: PositiveInt = 64 * 1024 * 1024
+    rag_cache_entries: int = Field(default=8, ge=1, le=64)
+    rag_cache_ttl_seconds: int = Field(default=120, ge=10, le=600)
     guest_daily_requests: PositiveInt = 8
     account_daily_requests: PositiveInt = 100
     guest_daily_tokens: PositiveInt = 120000

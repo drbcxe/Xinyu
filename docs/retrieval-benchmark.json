@@ -1,0 +1,363 @@
+{
+  "data_origin": "synthetic",
+  "scope": "BM25 + SQL only; embeddings/rerank/model/HTTP excluded",
+  "python": "3.12.15",
+  "os": "Windows 11",
+  "cpu": "Intel64 Family 6 Model 151 Stepping 2, GenuineIntel",
+  "logical_cpus": 24,
+  "memory_gib": 15.74,
+  "source_code_sha256": "3f27643fa906730d11b5c70b0bb17df66c209eb0d72de3ae7d189e5fe700a807",
+  "benchmark_sha256": "f5664384848db41640dd2f523924389543d29f097930a85f03bea3cffc2a4066",
+  "git_revision": "f8afdeeab5e1ad3fcf96dafceb9cc68fcf9f7cfb",
+  "sampling_interval_ms": 25,
+  "workloads": [
+    {
+      "documents": 20,
+      "raw_utf8_bytes": 260902,
+      "uncached": {
+        "samples": 9,
+        "p50_ms": 108.967,
+        "p95_ms": 132.166,
+        "max_ms": 132.166,
+        "cache": {
+          "misses": 9,
+          "builds": 9,
+          "entries": 1,
+          "estimated_bytes": 6367860,
+          "inflight": 0
+        },
+        "lexical_chunks": 261,
+        "rss_before_mib": 203.06,
+        "sampled_peak_rss_mib": 208.65,
+        "sampled_rss_growth_mib": 5.59,
+        "latencies_ms": [
+          132.166,
+          110.628,
+          108.967,
+          114.175,
+          94.066,
+          81.614,
+          123.962,
+          97.276,
+          74.998
+        ]
+      },
+      "cached": {
+        "samples": 9,
+        "p50_ms": 9.428,
+        "p95_ms": 93.97,
+        "max_ms": 93.97,
+        "cache": {
+          "misses": 1,
+          "builds": 1,
+          "hits": 8,
+          "entries": 1,
+          "estimated_bytes": 6367860,
+          "inflight": 0
+        },
+        "lexical_chunks": 261,
+        "rss_before_mib": 208.62,
+        "sampled_peak_rss_mib": 208.65,
+        "sampled_rss_growth_mib": 0.03,
+        "latencies_ms": [
+          93.97,
+          9.869,
+          9.084,
+          9.428,
+          10.459,
+          9.381,
+          7.166,
+          9.434,
+          9.236
+        ]
+      },
+      "identical_rankings": true,
+      "concurrent_4": {
+        "samples": 8,
+        "p50_ms": 12.543,
+        "p95_ms": 30.983,
+        "max_ms": 30.983,
+        "requests": 8,
+        "completed": 8,
+        "owners": 1,
+        "rejections": [],
+        "wall_seconds": 0.041,
+        "sampled_peak_rss_mib": 208.95,
+        "cache": {
+          "misses": 1,
+          "builds": 1,
+          "hits": 16,
+          "entries": 1,
+          "estimated_bytes": 6367860,
+          "inflight": 0
+        }
+      },
+      "cross_owner_concurrent_4": {
+        "samples": 8,
+        "p50_ms": 77.462,
+        "p95_ms": 144.594,
+        "max_ms": 144.594,
+        "requests": 8,
+        "completed": 8,
+        "owners": 2,
+        "rejections": [],
+        "wall_seconds": 0.16,
+        "sampled_peak_rss_mib": 209.62,
+        "cache": {
+          "misses": 2,
+          "coalesced": 2,
+          "builds": 2,
+          "hits": 4,
+          "entries": 2,
+          "estimated_bytes": 12735720,
+          "inflight": 0
+        }
+      }
+    },
+    {
+      "documents": 100,
+      "raw_utf8_bytes": 2091022,
+      "uncached": {
+        "samples": 9,
+        "p50_ms": 657.192,
+        "p95_ms": 750.825,
+        "max_ms": 750.825,
+        "cache": {
+          "misses": 9,
+          "builds": 9,
+          "entries": 1,
+          "estimated_bytes": 49649300,
+          "inflight": 0
+        },
+        "lexical_chunks": 2101,
+        "rss_before_mib": 210.07,
+        "sampled_peak_rss_mib": 246.31,
+        "sampled_rss_growth_mib": 36.24,
+        "latencies_ms": [
+          487.161,
+          555.248,
+          585.908,
+          747.292,
+          730.337,
+          742.686,
+          750.825,
+          657.192,
+          653.457
+        ]
+      },
+      "cached": {
+        "samples": 9,
+        "p50_ms": 10.559,
+        "p95_ms": 597.096,
+        "max_ms": 597.096,
+        "cache": {
+          "misses": 1,
+          "builds": 1,
+          "hits": 8,
+          "entries": 1,
+          "estimated_bytes": 49649300,
+          "inflight": 0
+        },
+        "lexical_chunks": 2101,
+        "rss_before_mib": 227.6,
+        "sampled_peak_rss_mib": 246.14,
+        "sampled_rss_growth_mib": 18.54,
+        "latencies_ms": [
+          597.096,
+          10.559,
+          9.294,
+          8.53,
+          10.68,
+          11.363,
+          10.917,
+          9.483,
+          10.147
+        ]
+      },
+      "identical_rankings": true,
+      "concurrent_4": {
+        "samples": 8,
+        "p50_ms": 23.829,
+        "p95_ms": 26.197,
+        "max_ms": 26.197,
+        "requests": 8,
+        "completed": 8,
+        "owners": 1,
+        "rejections": [],
+        "wall_seconds": 0.053,
+        "sampled_peak_rss_mib": 246.49,
+        "cache": {
+          "misses": 1,
+          "builds": 1,
+          "hits": 16,
+          "entries": 1,
+          "estimated_bytes": 49649300,
+          "inflight": 0
+        }
+      },
+      "cross_owner_concurrent_4": {
+        "samples": 8,
+        "p50_ms": 951.345,
+        "p95_ms": 1259.024,
+        "max_ms": 1259.024,
+        "requests": 8,
+        "completed": 8,
+        "owners": 2,
+        "rejections": [],
+        "wall_seconds": 1.913,
+        "sampled_peak_rss_mib": 283.98,
+        "cache": {
+          "misses": 3,
+          "coalesced": 3,
+          "builds": 3,
+          "evictions": 2,
+          "hits": 2,
+          "entries": 1,
+          "estimated_bytes": 49649300,
+          "inflight": 0
+        }
+      }
+    },
+    {
+      "documents": 300,
+      "raw_utf8_bytes": 8376732,
+      "uncached": {
+        "samples": 9,
+        "p50_ms": 2599.9,
+        "p95_ms": 2830.427,
+        "max_ms": 2830.427,
+        "cache": {
+          "misses": 9,
+          "builds": 9,
+          "oversized": 9,
+          "entries": 0,
+          "estimated_bytes": 0,
+          "inflight": 0
+        },
+        "lexical_chunks": 8201,
+        "rss_before_mib": 231.34,
+        "sampled_peak_rss_mib": 371.07,
+        "sampled_rss_growth_mib": 139.73,
+        "latencies_ms": [
+          2186.98,
+          2282.239,
+          2453.278,
+          2599.9,
+          2830.427,
+          2729.249,
+          2636.243,
+          2754.157,
+          2504.473
+        ]
+      },
+      "cached": {
+        "samples": 9,
+        "p50_ms": 2551.229,
+        "p95_ms": 2714.65,
+        "max_ms": 2714.65,
+        "cache": {
+          "misses": 9,
+          "builds": 9,
+          "oversized": 9,
+          "entries": 0,
+          "estimated_bytes": 0,
+          "inflight": 0
+        },
+        "lexical_chunks": 8201,
+        "rss_before_mib": 258.3,
+        "sampled_peak_rss_mib": 371.02,
+        "sampled_rss_growth_mib": 112.72,
+        "latencies_ms": [
+          2542.027,
+          2567.579,
+          2542.043,
+          2551.229,
+          2508.062,
+          2664.593,
+          2625.31,
+          2714.65,
+          2541.209
+        ]
+      },
+      "identical_rankings": true,
+      "concurrent_4": {
+        "samples": 8,
+        "p50_ms": 1911.36,
+        "p95_ms": 2429.007,
+        "max_ms": 2429.007,
+        "requests": 8,
+        "completed": 8,
+        "owners": 1,
+        "rejections": [],
+        "wall_seconds": 3.843,
+        "sampled_peak_rss_mib": 372.48,
+        "cache": {
+          "misses": 11,
+          "builds": 11,
+          "oversized": 11,
+          "coalesced": 6,
+          "entries": 0,
+          "estimated_bytes": 0,
+          "inflight": 0
+        }
+      },
+      "cross_owner_concurrent_4": {
+        "samples": 8,
+        "p50_ms": 5046.57,
+        "p95_ms": 5125.587,
+        "max_ms": 5125.587,
+        "requests": 8,
+        "completed": 8,
+        "owners": 2,
+        "rejections": [],
+        "wall_seconds": 10.163,
+        "sampled_peak_rss_mib": 539.67,
+        "cache": {
+          "misses": 4,
+          "coalesced": 4,
+          "builds": 4,
+          "oversized": 4,
+          "entries": 0,
+          "estimated_bytes": 0,
+          "inflight": 0
+        }
+      }
+    }
+  ],
+  "resources_cleaned": true,
+  "note": "Local observed workload, not a production capacity or latency guarantee. Includes cache preparation in measured runs. RSS includes native/shared memory; sampling may miss short peaks.",
+  "cache_limits": {
+    "bytes": 67108864,
+    "entries": 8,
+    "ttl_seconds": 120,
+    "cold_build_concurrency_per_process": 2
+  },
+  "postgres_version": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "verification_note": "Measured before commit; git_revision is the base commit. Source/code and benchmark SHA-256 match the delivered source tree. This final run was started after the regression test process completed; OS background work was not isolated.",
+  "retrieval_regression": {
+    "dataset_sha256": "2147222c3271632e1c9b89bdbb328b4f9da28feff3c94359caecd6b6e9a7acee",
+    "coverage": {
+      "requested": 50,
+      "completed": 50,
+      "not_completed": 0
+    },
+    "retrieval_evaluated_cases": 13,
+    "retrieval_summary": {
+      "bm25": {
+        "recall_at_k": 0.46153846153846156,
+        "precision_at_k": 0.4230769230769231,
+        "mrr": 0.4230769230769231,
+        "ndcg_at_k": 0.4331484425824198
+      },
+      "hybrid": {
+        "recall_at_k": 0.6153846153846154,
+        "precision_at_k": 0.3717948717948718,
+        "mrr": 0.5769230769230769,
+        "ndcg_at_k": 0.5869945964285737
+      }
+    },
+    "charged_tokens": 0,
+    "resource_cleanup_completed": true,
+    "unchanged_from_pre_cache_measurement": true
+  }
+}

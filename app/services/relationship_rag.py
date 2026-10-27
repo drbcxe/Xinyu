@@ -24,10 +24,10 @@ from app.models.relationship import RelationshipItem, RelationshipRagIndex
 from app.providers.model_provider import complete
 from app.repositories.database import get_engine
 from app.services.resource_control import ensure_active, purpose_scope
+from app.services.retrieval_cache import corpus_cache
 
 CHUNK_SIZE = 420
 CHUNK_OVERLAP = 70
-LEXICAL_MAX_CHUNKS = 12000
 
 
 def index_signature() -> str:
@@ -160,6 +160,7 @@ def chunks_for(item: RelationshipItem) -> list[dict]:
 def schedule_index(db: Session, item: RelationshipItem, *, deleted: bool = False):
     if item.kind not in {"memory", "chat_log"}:
         return
+    corpus_cache.invalidate(cache_scope(item.owner))
     values = {
         "item_id": item.id,
         "owner": item.owner,
@@ -326,15 +327,9 @@ def tokenize(text: str) -> list[str]:
     ]
 
 
-def current_source(db: Session, owner: str, hit: dict) -> bool:
-    item = db.scalar(
-        select(RelationshipItem)
-        .where(RelationshipItem.id == hit.get("source_id"))
-        .execution_options(populate_existing=True)
-    )
+def source_matches(item, hit):
     if (
         not item
-        or item.owner != owner
         or item.status != "active"
         or item.revision != hit.get("revision")
         or item.kind not in {"memory", "chat_log"}
@@ -346,6 +341,95 @@ def current_source(db: Session, owner: str, hit: dict) -> bool:
         and isinstance(end, int)
         and 0 <= start < end
         and source_text(item)[start:end] == hit.get("quote")
+    )
+
+
+def current_sources(db: Session, owner: str, hits: list[dict]) -> list[dict]:
+    ids = {hit.get("source_id") for hit in hits if hit.get("source_id")}
+    if not ids:
+        return []
+    items = {
+        item.id: item
+        for item in db.scalars(
+            select(RelationshipItem)
+            .where(
+                RelationshipItem.owner == owner,
+                RelationshipItem.id.in_(ids),
+                RelationshipItem.status == "active",
+                RelationshipItem.kind.in_(["memory", "chat_log"]),
+            )
+            .execution_options(populate_existing=True)
+        )
+    }
+    return [hit for hit in hits if source_matches(items.get(hit.get("source_id")), hit)]
+
+
+def current_source(db: Session, owner: str, hit: dict) -> bool:
+    return bool(current_sources(db, owner, [hit]))
+
+
+def cache_scope(owner):
+    return hashlib.sha256(get_settings().database_url.encode()).hexdigest(), owner
+
+
+def lexical_corpus(db, owner, kind):
+    conditions = [
+        RelationshipItem.owner == owner,
+        RelationshipItem.status == "active",
+        RelationshipItem.kind.in_([kind] if kind else ["memory", "chat_log"]),
+    ]
+    # Load only identity/version metadata on a warm query; raw text stays in the bounded cache.
+    metadata = db.execute(
+        select(
+            RelationshipItem.id,
+            RelationshipItem.revision,
+            RelationshipItem.kind,
+            RelationshipItem.created_at,
+        )
+        .where(*conditions)
+        .order_by(RelationshipItem.created_at.desc(), RelationshipItem.id)
+    ).all()
+    fingerprint = hashlib.sha256(
+        repr([tuple(row) for row in metadata]).encode()
+    ).hexdigest()
+    scope = cache_scope(owner)
+    key = (*scope, kind, index_signature(), fingerprint)
+    db.rollback()
+
+    def build():
+        corpus = []
+        for item in db.scalars(
+            select(RelationshipItem)
+            .where(*conditions)
+            .order_by(RelationshipItem.created_at.desc(), RelationshipItem.id)
+            .execution_options(yield_per=32)
+        ):
+            ensure_active()
+            corpus.extend(chunks_for(item))
+        db.rollback()
+        if not corpus:
+            return ([], None), 128
+        tokenized = [tokenize(hit["quote"]) or ["<empty>"] for hit in corpus]
+        bm25 = BM25Okapi(tokenized)
+        for word, score in list(bm25.idf.items()):
+            if score <= 0:
+                bm25.idf[word] = 0.1
+        # Conservative accounting estimate, not a process-RSS promise. Large corpora are evaluated uncached.
+        size = sum(
+            len(hit["quote"].encode()) * 12 + len(hit["title"].encode()) * 4 + 2048
+            for hit in corpus
+        )
+        size += sum(len(tokens) * 32 for tokens in tokenized)
+        return (corpus, bm25), size
+
+    settings = get_settings()
+    return corpus_cache.get_or_build(
+        key,
+        scope,
+        build,
+        max_bytes=settings.rag_cache_bytes,
+        max_entries=settings.rag_cache_entries,
+        ttl=settings.rag_cache_ttl_seconds,
     )
 
 
@@ -363,21 +447,7 @@ def retrieve(
     query = query.strip()[:2000]
     if not query:
         return {"sources": [], "mode": "empty", "warnings": [], "milliseconds": 0}
-    conditions = [
-        RelationshipItem.owner == owner,
-        RelationshipItem.status == "active",
-        RelationshipItem.kind.in_([kind] if kind else ["memory", "chat_log"]),
-    ]
-    corpus = []
-    for item in db.scalars(
-        select(RelationshipItem)
-        .where(*conditions)
-        .order_by(RelationshipItem.created_at.desc())
-    ):
-        corpus.extend(chunks_for(item))
-        if len(corpus) >= LEXICAL_MAX_CHUNKS:
-            corpus = corpus[:LEXICAL_MAX_CHUNKS]
-            break
+    (corpus, bm25), cache_hit = lexical_corpus(db, owner, kind)
     if not corpus:
         return {
             "sources": [],
@@ -385,12 +455,6 @@ def retrieve(
             "warnings": [],
             "milliseconds": round((time.monotonic() - started) * 1000),
         }
-    tokenized = [tokenize(hit["quote"]) or ["<empty>"] for hit in corpus]
-    # BM25Okapi can produce all-negative IDF for tiny corpora. A positive floor keeps exact matches useful.
-    bm25 = BM25Okapi(tokenized)
-    for word, score in list(bm25.idf.items()):
-        if score <= 0:
-            bm25.idf[word] = 0.1
     scores = bm25.get_scores(tokenize(query))
     lexical = [
         dict(corpus[i], bm25_score=float(scores[i]))
@@ -421,11 +485,15 @@ def retrieve(
             )
             .points
         )
-        dense = [
-            dict(point.payload, vector_score=float(point.score))
-            for point in found
-            if point.payload and current_source(db, owner, point.payload)
-        ]
+        dense = current_sources(
+            db,
+            owner,
+            [
+                dict(point.payload, vector_score=float(point.score))
+                for point in found
+                if point.payload
+            ],
+        )
     except Exception:  # noqa: BLE001 - explicit lexical degradation; do not claim vector retrieval succeeded
         if get_settings().rag_dense_enabled:
             warnings.append("向量检索暂不可用，本次使用 BM25 关键词检索")
@@ -489,7 +557,7 @@ def retrieve(
             reranked = True
         except (AppError, ValueError, TypeError):
             warnings.append("语义重排未完成，保留混合召回排序")
-    selected = [hit for hit in selected if current_source(db, owner, hit)]
+    selected = current_sources(db, owner, selected)
     sources = [
         {k: v for k, v in hit.items() if k not in {"owner", "point_id"}}
         for hit in selected[:top_k]
@@ -500,6 +568,8 @@ def retrieve(
         "reranked": reranked,
         "warnings": warnings,
         "milliseconds": round((time.monotonic() - started) * 1000),
+        "cache_hit": cache_hit,
+        "lexical_chunks": len(corpus),
     }
 
 

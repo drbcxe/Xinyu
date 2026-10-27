@@ -150,6 +150,8 @@ def update_alerts(findings):
 
 
 def operational_status(update=False):
+    from app.services.retrieval_cache import corpus_cache
+
     readiness = probe_readiness()
     try:
         queues = queue_metrics()
@@ -162,4 +164,10 @@ def operational_status(update=False):
     alerts = alert_findings(readiness, queues, http)
     if update:
         update_alerts(alerts)
-    return {"readiness": readiness, "queues": queues, "http": http, "alerts": alerts}
+    return {
+        "readiness": readiness,
+        "queues": queues,
+        "http": http,
+        "alerts": alerts,
+        "retrieval_cache": {"scope": "calling_process_only", **corpus_cache.stats()},
+    }

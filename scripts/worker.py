@@ -14,6 +14,7 @@ from app.services.ops_status import operational_status
 from app.services.relationship_jobs import dispatch_reminders, process_one
 from app.services.relationship_rag import process_index
 from app.services.resource_control import reconcile_abandoned_calls
+from app.services.retrieval_cache import corpus_cache
 from app.services.runtime_state import remove_heartbeat, write_heartbeat
 
 
@@ -59,6 +60,7 @@ def main():
                             reconcile_abandoned_calls,
                             reconcile_closed_spaces,
                             prune_online_data,
+                            corpus_cache.expire,
                         ):
                             try:
                                 action()

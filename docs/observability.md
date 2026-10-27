@@ -40,3 +40,6 @@ Worker 每分钟在独立维护线程检测依赖不就绪、Worker 心跳消失
 故障排查顺序：先看 `/api/ready`，再用 `scripts.ops` 区分依赖、积压和任务失败；持有请求编号时，在 API 日志中定位 job ID，再查看同一 job ID 的 Worker 事件。日志故意不含原文与完整异常，不应为排错临时打开敏感请求日志。
 
 参考：[Prometheus 指标与标签规范](https://prometheus.io/docs/practices/naming/)。
+# 检索缓存指标补充
+
+受保护的运维状态新增 `retrieval_cache`，Prometheus 文本新增 `xinyu_rag_cache_*`。这些是响应进程的缓存条目、估算字节、构建/命中/超预算计数，不含问题、来源 ID 或空间标识；API 与各 Worker 的缓存彼此独立，不能把单进程值当作集群合计。估算缓存字节也不是进程 RSS，测量定义见 [检索性能](./retrieval-performance.md)。

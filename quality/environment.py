@@ -20,6 +20,7 @@ from app.repositories.database import get_engine
 from app.services.auth_cache import get_redis
 from app.services.graph_checkpoints import prepare_checkpoints
 from app.services.relationship_rag import ensure_collection, vector_client
+from app.services.retrieval_cache import corpus_cache
 
 
 @dataclass
@@ -30,6 +31,7 @@ class EvaluationSpace:
 
 
 def close_connections():
+    corpus_cache.clear()
     if get_engine.cache_info().currsize:
         get_engine().dispose()
     if get_redis.cache_info().currsize:

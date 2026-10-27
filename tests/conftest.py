@@ -106,8 +106,10 @@ def backend(infrastructure, monkeypatch):
     from app.repositories.database import get_engine
     from app.services import recovery_journal
     from app.services.auth_cache import get_redis
+    from app.services.retrieval_cache import corpus_cache
 
     get_engine.cache_clear()
+    corpus_cache.clear(reset=True)
     get_redis.cache_clear()
     monkeypatch.setenv("DATABASE_URL", infrastructure.database_url)
     monkeypatch.setenv("REDIS_URL", infrastructure.redis_url)

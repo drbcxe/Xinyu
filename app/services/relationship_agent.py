@@ -18,7 +18,7 @@ from app.providers.model_provider import complete
 from app.schemas.relationship import Advice, Candidate
 from app.services.agent_clock import now as agent_now
 from app.services.graph_checkpoints import checkpoint_store
-from app.services.relationship_rag import current_source, retrieve
+from app.services.relationship_rag import current_sources, retrieve
 from app.services.relationship_tools import execute_tool
 from app.services.resource_control import (
     ensure_active,
@@ -322,8 +322,7 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
             )
             available = {
                 row["citation_id"]: row
-                for row in state["sources"]
-                if current_source(db, owner, row)
+                for row in current_sources(db, owner, state["sources"])
             }
             if any(key not in available for key in advice.source_ids):
                 raise ValueError("来源编号无效或资料已修改，请只使用当前提供的有效来源")
@@ -460,15 +459,8 @@ def _run_agent_graph(db, owner, content, mode, request_id):
     with checkpoint_store() as saver:
         graph = build_graph(db, owner, deadline, saver)
         snapshot = graph.get_state(config)
-        stale_sources = (
-            [
-                row
-                for row in snapshot.values.get("sources", [])
-                if not current_source(db, owner, row)
-            ]
-            if snapshot.values
-            else []
-        )
+        old_sources = snapshot.values.get("sources", []) if snapshot.values else []
+        stale_sources = len(current_sources(db, owner, old_sources)) != len(old_sources)
         db.rollback()
         obsolete_protocol = (
             bool(snapshot.values) and snapshot.values.get("protocol") != GRAPH_PROTOCOL
