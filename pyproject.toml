@@ -25,6 +25,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "agentevals>=0.0.9,<0.1",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
 ]

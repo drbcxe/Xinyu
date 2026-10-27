@@ -36,6 +36,13 @@ def index_signature() -> str:
 
 
 def collection_name() -> str:
+    override = get_settings().rag_collection_override
+    if override:
+        if get_settings().app_env not in {"test", "evaluation"} or not re.fullmatch(
+            r"xinyu_eval_[0-9a-f]{16}", override
+        ):
+            raise AppError(503, "RAG_NAMESPACE_INVALID", "评测索引空间配置无效")
+        return override
     return "xinyu_" + index_signature()
 
 
@@ -191,7 +198,11 @@ def purge_source_vectors(owner: str, source_id: str):
     """Remove a source from current and older application embedding collections."""
     client = vector_client()
     for collection in client.get_collections().collections:
-        if re.fullmatch(r"xinyu_[0-9a-f]{16}", collection.name):
+        if (
+            collection.name == collection_name()
+            if get_settings().rag_collection_override
+            else re.fullmatch(r"xinyu_[0-9a-f]{16}", collection.name)
+        ):
             client.delete(
                 collection.name,
                 models.FilterSelector(filter=source_filter(owner, source_id)),
@@ -390,6 +401,8 @@ def retrieve(
     ensure_active()
     dense, warnings = [], []
     try:
+        if not get_settings().rag_dense_enabled:
+            raise LookupError("dense_disabled_for_evaluation")
         vector = next(iter(embedder().query_embed(query))).tolist()
         filter_value = source_filter(owner)
         if kind:
@@ -414,7 +427,8 @@ def retrieve(
             if point.payload and current_source(db, owner, point.payload)
         ]
     except Exception:  # noqa: BLE001 - explicit lexical degradation; do not claim vector retrieval succeeded
-        warnings.append("向量检索暂不可用，本次使用 BM25 关键词检索")
+        if get_settings().rag_dense_enabled:
+            warnings.append("向量检索暂不可用，本次使用 BM25 关键词检索")
     merged = {}
     for ranking in (dense, lexical):
         for position, hit in enumerate(ranking, start=1):
@@ -475,6 +489,7 @@ def retrieve(
             reranked = True
         except (AppError, ValueError, TypeError):
             warnings.append("语义重排未完成，保留混合召回排序")
+    selected = [hit for hit in selected if current_source(db, owner, hit)]
     sources = [
         {k: v for k, v in hit.items() if k not in {"owner", "point_id"}}
         for hit in selected[:top_k]

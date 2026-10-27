@@ -344,6 +344,16 @@ def process_one() -> bool:
                     503,
                     504,
                 }
+                if isinstance(exc, AppError) and exc.code in {
+                    "ADVICE_INVALID",
+                    "AGENT_BUDGET",
+                    "MODEL_AUTH_ERROR",
+                    "MODEL_PERMISSION_ERROR",
+                    "MODEL_REQUEST_REJECTED",
+                    "MODEL_NOT_FOUND",
+                    "MODEL_OUTPUT_LIMIT",
+                }:
+                    retryable = False
                 retry = (
                     retryable
                     and job.attempts < settings.worker_max_attempts

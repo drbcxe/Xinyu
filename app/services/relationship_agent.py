@@ -1,8 +1,8 @@
 """LangGraph agent with persistent checkpoints, RAG, tools and validated outputs."""
 
+import hashlib
 import json
 import time
-from datetime import UTC, datetime
 from typing import TypedDict
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ from app.errors import AppError
 from app.models.relationship import RelationshipProfile, RelationshipTurn
 from app.providers.model_provider import complete
 from app.schemas.relationship import Advice, Candidate
+from app.services.agent_clock import now as agent_now
 from app.services.graph_checkpoints import checkpoint_store
 from app.services.relationship_rag import current_source, retrieve
 from app.services.relationship_tools import execute_tool
@@ -32,8 +33,10 @@ SYSTEM = """你是心语，帮助现实情侣沟通的私人助手，不扮演�
 候选 quote 必须逐字来自当前用户消息，不能引用你自己说的话。涉及约会调用 plan_date_context 了解已确认偏好和约束。
 分清事实、转述与猜测；不诊断人格、不虚构情绪概率、不无条件站队。信息不足时补问一个关键问题。
 回复自然、尊重双方、符合用户风格，不要每次都道歉或长篇说教。不声称已代发消息、预订或完成事项。
+replies 最多3条可选回复，每条都是一条完整、可独立发送的表达，不把同一段话拆成4条或更多元素。
 约会方案只能给场所类型和参考时间安排，不编造真实店铺、营业时间、价格、天气或可预约情况。
 输出最多3个候选约会方案，预算为估算且需用户核实，关键条件缺失应先问清，不凭空填写城市和日期。
+每个约会方案 schedule 最多8步，needs_confirmation 最多6项。
 检索资料以 citation_id 标记；仅在确实参考时，在最终 source_ids 列出对应编号。只能使用工具/检索结果中的真实编号，不编造来源。
 analysis 和 replies 不展示 citation_id 技术编号；引用只通过 source_ids 输出，由界面展示原文。
 最终只输出JSON：{"analysis":"分析或直接回答","source_ids":["参考资料编号，可为空"],"uncertainty":"未知信息或补问，可为空",
@@ -41,6 +44,7 @@ analysis 和 replies 不展示 citation_id 技术编号；引用只通过 source
 "schedule":["参考安排"],"reason":"与已知偏好/约束的关系","needs_confirmation":["待核实项"]}]}。
 非约会咨询 date_plans 返回空数组。候选由工具记录，不在最终输出中编造；不输出推理过程。
 """
+GRAPH_PROTOCOL = "2:" + hashlib.sha256(SYSTEM.encode()).hexdigest()[:16]
 
 
 def tool(name: str, description: str, properties: dict, required: list[str]):
@@ -102,6 +106,8 @@ def json_object(value: str):
 
 
 class AgentState(TypedDict, total=False):
+    protocol: str
+    validation_failures: int
     content: str
     mode: str
     messages: list[dict]
@@ -144,7 +150,7 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
         context = {
             "partner": profile.partner_name,
             "style": profile.style,
-            "now": datetime.now(UTC).isoformat(),
+            "now": agent_now().isoformat(),
             "mode": state.get("mode", "chat"),
             "recent": [
                 {
@@ -158,6 +164,8 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
         ensure_active()
         db.rollback()
         return {
+            "protocol": GRAPH_PROTOCOL,
+            "validation_failures": 0,
             "messages": [
                 {"role": "system", "content": SYSTEM},
                 {
@@ -256,6 +264,7 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
             tick = time.monotonic()
             name = call.get("function", {}).get("name", "")
             count += 1
+            args = {}
             try:
                 args = json.loads(call["function"].get("arguments") or "{}")
                 if not isinstance(args, dict) or count > 6:
@@ -275,6 +284,10 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
             traces.append(
                 {
                     "tool": name,
+                    "arguments": args
+                    if isinstance(args, dict)
+                    and len(json.dumps(args, ensure_ascii=False)) <= 5000
+                    else {"omitted": True},
                     "status": status,
                     "milliseconds": round((time.monotonic() - tick) * 1000),
                     "result": output,
@@ -331,18 +344,39 @@ def build_graph(db: Session, owner: str, deadline: float, checkpointer=None):
                     }
                 ),
             )
-        except (ValueError, ValidationError, TypeError):
-            if state["model_steps"] >= 8:
+        except (ValueError, ValidationError, TypeError) as exc:
+            failures = state.get("validation_failures", 0)
+            if state["model_steps"] >= 8 or failures >= 2:
                 raise AppError(
                     502, "ADVICE_INVALID", "模型未返回有效结构化建议或来源，请重试"
                 ) from None
+            if isinstance(exc, ValidationError):
+                issue = json.dumps(
+                    [
+                        {
+                            "field": ".".join(map(str, error["loc"])),
+                            "message": error["msg"],
+                        }
+                        for error in exc.errors(
+                            include_input=False, include_context=False
+                        )[:4]
+                    ],
+                    ensure_ascii=False,
+                )[:1000]
+            elif isinstance(exc, json.JSONDecodeError):
+                issue = f"JSON语法错误，位置{exc.pos}；请检查引号、转义和对象结构"
+            else:
+                issue = "来源编号无效或字段类型不正确；不要引用未提供的资料"
             return {
+                "validation_failures": failures + 1,
                 "result": {},
                 "messages": [
                     *state["messages"],
                     {
                         "role": "user",
-                        "content": "请返回完整JSON对象；source_ids只能包含检索结果中的真实citation_id，未参考资料时返回空数组。",
+                        "content": "请修正具体校验错误："
+                        + issue
+                        + "。返回完整JSON对象；replies最多3条独立回复；source_ids只能包含真实citation_id，未参考时为空数组。",
                     },
                 ],
                 "graph_trace": trace(state, "validate_answer", started, valid=False),
@@ -436,7 +470,14 @@ def _run_agent_graph(db, owner, content, mode, request_id):
             else []
         )
         db.rollback()
-        if stale_sources:
+        obsolete_protocol = (
+            bool(snapshot.values) and snapshot.values.get("protocol") != GRAPH_PROTOCOL
+        )
+        exhausted = bool(snapshot.next) and (
+            snapshot.values.get("model_steps", 0) >= 8
+            or snapshot.values.get("validation_failures", 0) >= 2
+        )
+        if stale_sources or obsolete_protocol or exhausted:
             saver.delete_thread(config["configurable"]["thread_id"])
             snapshot = graph.get_state(config)
         resumed = bool(snapshot.values)

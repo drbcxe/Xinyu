@@ -33,6 +33,9 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 15
+      qdrant:
+        image: qdrant/qdrant:v1.17.0
+        ports: ['6333:6333']
     env:
       APP_ENV: test
       DATABASE_URL: postgresql+psycopg://fixture:fixture-only-ci-password@127.0.0.1:5432/postgres
@@ -47,8 +50,8 @@ jobs:
           python-version: '3.12'
           enable-cache: true
       - run: uv sync --locked
-      - run: uv run ruff check app scripts tests
-      - run: uv run ruff format --check app scripts tests
+      - run: uv run ruff check app scripts quality tests
+      - run: uv run ruff format --check app scripts quality tests
       - run: uv run python -m pytest tests -q --tb=short
 
   frontend:

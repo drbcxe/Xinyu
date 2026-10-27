@@ -1,17 +1,38 @@
 """Bounded, account-scoped tools. Proposed writes still require a user confirmation."""
 
-from datetime import UTC, datetime
-
 from sqlalchemy import select
 
 from app.models.relationship import RelationshipItem
 from app.schemas.relationship import Candidate
+from app.services.agent_clock import now as agent_now
 from app.services.relationship_rag import retrieve
 
 
 def execute_tool(
     db, owner: str, content: str, name: str, args: dict, deadline: float
 ) -> tuple[dict, Candidate | None, list[dict]]:
+    fields = {
+        "search_memories": {"query": 2000},
+        "search_chat_history": {"query": 2000},
+        "plan_date_context": {"constraints": 2000},
+        "get_upcoming_items": {},
+        "propose_memory": {"title": 500, "quote": 1000},
+        "propose_reminder": {"title": 500, "quote": 1000},
+    }
+    expected = fields.get(name)
+    if expected is None:
+        raise ValueError("工具不存在")
+    if (
+        not isinstance(args, dict)
+        or set(args) != set(expected)
+        or any(
+            not isinstance(args[key], str)
+            or not args[key].strip()
+            or len(args[key]) > maximum
+            for key, maximum in expected.items()
+        )
+    ):
+        raise ValueError("工具参数缺失、类型错误或超过长度限制")
     candidate, sources = None, []
     if name in {"search_memories", "search_chat_history", "plan_date_context"}:
         query = str(args.get("query", args.get("constraints", content)))[:2000]
@@ -58,7 +79,7 @@ def execute_tool(
                 }
                 for row in rows
             ],
-            "now": datetime.now(UTC).isoformat(),
+            "now": agent_now().isoformat(),
         }
     elif name in {"propose_memory", "propose_reminder"}:
         candidate = Candidate(

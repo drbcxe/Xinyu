@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     rag_embedding_model: str = "BAAI/bge-small-zh-v1.5"
     rag_model_cache: str = "D:/DevTools/embedding-models"
     rag_rerank_enabled: bool = True
+    rag_dense_enabled: bool = True
+    rag_collection_override: str = ""
     guest_daily_requests: PositiveInt = 8
     account_daily_requests: PositiveInt = 100
     guest_daily_tokens: PositiveInt = 120000
