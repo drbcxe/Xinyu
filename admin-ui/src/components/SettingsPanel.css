@@ -1,0 +1,64 @@
+.settings-hub { max-width: 1100px; margin: 6px auto 0; }
+.settings-heading { margin-bottom: 30px; }
+.settings-heading h1 { font-size: 32px; font-weight: 650; letter-spacing: -.9px; color: #242435; }
+.settings-heading > p { margin-top: 7px; font-size: 12px; color: #8b8b9b; }
+.settings-layout { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 28px; align-items: start; }
+.settings-navigation { display: grid; gap: 7px; position: sticky; top: 96px; }
+.settings-navigation a { display: flex; align-items: center; gap: 12px; padding: 15px 13px; color: #79788e; border: 1px solid transparent; border-radius: 13px; }
+.settings-navigation a > svg { width: 18px; height: 18px; flex-shrink: 0; }
+.settings-navigation a > svg:last-child { margin-left: auto; width: 13px; opacity: 0; }
+.settings-navigation strong { display: block; font-size: 13px; font-weight: 550; }
+.settings-navigation small { display: block; margin-top: 4px; font-size: 10px; color: #a19bab; }
+.settings-navigation a:hover { background: #f0eef8; }
+.settings-navigation a.selected { color: #6c50ce; background: #efebfa; border-color: #e4dcf7; }
+.settings-navigation a.selected > svg:last-child { opacity: 1; }
+.settings-content { min-width: 0; }
+.settings-section-heading { margin: 0 0 18px; }
+.settings-section-heading h2 { color: #464255; font-size: 19px; font-weight: 600; }
+.settings-section-heading p { font-size: 11px; color: #9e97a7; margin-top: 4px; }
+.settings-card { padding: 27px; margin-bottom: 18px; border: 1px solid #e6dfef; border-radius: 18px; background: #fff; color: #84778f; }
+.settings-card h3 { font-size: 15px; color: #695777; font-weight: 550; }
+.settings-card p { font-size: 12px; line-height: 1.9; margin-top: 9px; }
+.settings-card-heading { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
+.settings-card-heading > svg { width: 21px; height: 21px; color: #9885b2; flex-shrink: 0; margin-top: 2px; }
+.settings-card-heading > div { flex: 1; min-width: 0; }
+.settings-card-heading p { margin-top: 6px; }
+.settings-profile { display: grid; gap: 22px; }
+.settings-profile .settings-card-heading { margin-bottom: 2px; }
+.settings-profile label { display: grid; gap: 10px; font-size: 12px; color: #8a7899; }
+.settings-profile input,.settings-profile textarea { width: 100%; border: 1px solid #e3dcec; border-radius: 11px; padding: 12px 14px; background: #fff; font: inherit; font-size: 13px; }
+.settings-profile textarea { resize: vertical; line-height: 1.8; min-height: 130px; }
+.settings-profile small { font-size: 10px; color: #aaa0b3; }
+.settings-actions { display: flex; gap: 13px; flex-wrap: wrap; align-items: center; margin-top: 20px; }
+.settings-profile .settings-actions { margin-top: 0; }
+.settings-actions button,.settings-actions a,.settings-import { font-size: 12px; }
+.settings-actions a { display: inline-flex; align-items: center; gap: 8px; color: #8a6faa; }
+.settings-actions a > svg { width: 14px; height: 14px; }
+.settings-account { display: flex; gap: 16px; align-items: center; }
+.settings-account-avatar { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: #9275b2; background: #f3eefb; flex-shrink: 0; }
+.settings-account-avatar svg { width: 24px; height: 24px; }
+.settings-feature-list { list-style: none; margin: 20px 0 10px; padding: 0; display: grid; gap: 16px; font-size: 12px; }
+.settings-feature-list li { display: flex; gap: 10px; align-items: center; }
+.settings-feature-list svg { width: 17px; height: 17px; color: #a997b8; }
+.settings-status { font-size: 10px; padding: 4px 8px; color: #a092a8; background: #f6f3f8; border-radius: 6px; white-space: nowrap; }
+.settings-status.ready { color: #678e7d; background: #edf6f1; }
+.settings-import,.settings-export { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #e2d8ed; border-radius: 10px; padding: 10px 14px; color: #8a6faa; cursor: pointer; background: #fcfaff; }
+.settings-import svg { width: 15px; height: 15px; }
+.settings-import.disabled { opacity: .5; cursor: not-allowed; }
+.settings-imports { margin-top: 20px; }
+.settings-imports > div { display: flex; align-items: center; gap: 10px; border-top: 1px solid #f1ebf6; padding: 13px 0; font-size: 12px; }
+.settings-imports > div > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-imports button { font-size: 10px; padding: 6px 10px; }
+.settings-card .settings-caption { color: #aaa0b3; font-size: 11px; margin-top: 18px; }
+.settings-danger { border-color: #eddee4; background: #fffcfd; }
+.settings-danger h3 { color: #a56f81; }
+.settings-danger > button,.settings-clear-confirm .settings-actions > button:first-child { margin-top: 17px; color: #ab7182; border-color: #ead5dc; background: #fff8fa; font-size: 12px; }
+.settings-clear-confirm { margin-top: 17px; border-top: 1px solid #f0e1e7; padding-top: 7px; }
+.settings-clear-confirm .settings-actions > button:first-child { margin-top: 0; }
+.settings-content > .love-usage { margin: 0; border-radius: 18px; }
+.settings-content .love-usage-meters { gap: 18px; }
+@media (max-width: 1100px) { .settings-layout { grid-template-columns: 170px minmax(0,1fr); gap: 20px; }.settings-navigation a { padding-inline: 10px; }.settings-navigation small { font-size: 9px; }.settings-card { padding: 23px; } }
+@media (max-width: 850px) { .settings-layout { grid-template-columns: minmax(0,1fr); gap: 22px; }.settings-navigation { position: static; display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; }.settings-navigation a { flex-shrink: 0; padding: 12px 14px; }.settings-navigation small,.settings-navigation a > svg:last-child { display: none; }.settings-navigation strong { white-space: nowrap; font-size: 12px; } }
+@media (max-width: 600px) { .settings-heading { margin-bottom: 23px; }.settings-heading h1 { font-size: 27px; }.settings-card { padding: 21px; }.settings-account { align-items: flex-start; }.settings-card-heading { flex-wrap: wrap; }.settings-status { margin-left: 33px; }.settings-imports > div { flex-wrap: wrap; }.settings-imports > div > span { flex-basis: 100%; }.settings-content .love-usage-meters { grid-template-columns: 1fr; } }
+
+.settings-card > .settings-load-more { margin-top: 14px; width: 100%; font-size: 11px; }

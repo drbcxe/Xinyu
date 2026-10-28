@@ -4,7 +4,8 @@ import { NavLink, useLocation } from 'react-router'
 import ReactMarkdown from 'react-markdown'
 import Icon from '../components/Icon'
 import AuthDialog from '../components/AuthDialog'
-import UsagePanel from '../components/UsagePanel'
+import SettingsPanel from '../components/SettingsPanel'
+import { getSettingsSection } from '../settingsSections'
 import PrivacyDialog from '../components/PrivacyDialog'
 import FeedbackControls from '../components/FeedbackControls'
 import KnowledgePanel, { SourceCards } from '../components/KnowledgePanel'
@@ -21,7 +22,9 @@ function privacyScope(value: State) { return `${value.account.username ?? 'guest
 
 export default function RelationshipPage() {
   const { pathname } = useLocation()
-  const tab = pathname.endsWith('/memories') ? 'memories' : pathname.endsWith('/reminders') ? 'reminders' : pathname.endsWith('/dates') ? 'dates' : pathname.endsWith('/knowledge') ? 'knowledge' : pathname.endsWith('/settings') ? 'settings' : 'chat'
+  const rootPage = pathname.split('/').filter(Boolean)[1]
+  const tab = rootPage === 'memories' ? 'memories' : rootPage === 'reminders' ? 'reminders' : rootPage === 'dates' ? 'dates' : rootPage === 'knowledge' ? 'knowledge' : rootPage === 'settings' ? 'settings' : 'chat'
+  const settingsSection = getSettingsSection(pathname)
   const [state, setState] = useState<State | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -30,7 +33,6 @@ export default function RelationshipPage() {
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [profile, setProfile] = useState({ partner_name: '', style: '' })
-  const [clearConfirm, setClearConfirm] = useState(false)
   const [privacyManualFor, setPrivacyManualFor] = useState<string | null>(null)
   const [privacyDismissedFor, setPrivacyDismissedFor] = useState<string | null>(null)
   const [older, setOlder] = useState<Turn[]>([])
@@ -50,7 +52,7 @@ export default function RelationshipPage() {
   const modalOpen = Boolean(draft || authMode || transcript !== null || rawDocument)
   const stateVersion = useRef<string | null>(null)
   const refreshing = useRef(false)
-  const collectionKind = tab === 'memories' ? 'memory' : tab === 'reminders' ? 'reminder' : tab === 'dates' ? 'date_plan' : tab === 'settings' ? 'chat_log' : null
+  const collectionKind = tab === 'memories' ? 'memory' : tab === 'reminders' ? 'reminder' : tab === 'dates' ? 'date_plan' : tab === 'settings' && settingsSection.key === 'data' ? 'chat_log' : null
   const collection = useItemPage(collectionKind, state?.version, tab === 'memories' ? memoryQuery : '', tab === 'reminders' ? itemFilter : 'all')
   const refresh = useCallback(async () => {
     const next = await api<State>('/state')
@@ -91,7 +93,7 @@ export default function RelationshipPage() {
     document.addEventListener('visibilitychange', visible)
     return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
   }, [refresh])
-  useEffect(() => { document.title = `${labels[tab]} · 心语 Xinyu` }, [tab])
+  useEffect(() => { document.title = `${tab === 'settings' ? settingsSection.label + ' · 设置' : labels[tab]} · 心语 Xinyu` }, [tab, settingsSection.label])
   useEffect(() => {
     if (!modalOpen) return
     const previous = document.activeElement as HTMLElement | null
@@ -256,7 +258,7 @@ export default function RelationshipPage() {
       <div className="love-sidebar-bottom"><div className="love-side-note"><Icon name="spark" /><p>让在意，有回应。</p><small>懂得表达，也记得行动。</small><NavLink to="/assistant/memories">看看已记住的事 <Icon name="arrow" /></NavLink></div><div className="love-side-identity"><span className="love-avatar">{state?.account.username?.slice(0, 1).toUpperCase() ?? 'U'}</span><div><strong>{state?.account.username ?? '我的个人空间'}</strong><small>{state?.account.username ? '已登录账号' : '访客模式 · 可注册保存'}</small></div></div></div>
     </aside>
     <main className="love-main">
-      <header className="love-top"><span>个人空间 <i>/</i> <strong>{labels[tab]}</strong></span><div className="love-top-actions">{state?.privacy && <button className="privacy-entry" aria-label="打开数据使用说明与授权设置" onClick={() => setPrivacyManualFor(privacyKey)}><Icon name="shield" />数据使用</button>}<span className={`love-service-state ${state?.worker_online ? 'online' : ''}`}><span />{state?.worker_online ? '助手在线' : '后台离线'}</span><button className="love-account-button" onClick={() => setAuthMode('login')}><Icon name="user" />{state?.account.username ? '账号管理' : '登录 / 注册'}</button></div></header>
+      <header className="love-top"><span>个人空间 <i>/</i> <strong>{tab === 'settings' ? '设置 · ' + settingsSection.label : labels[tab]}</strong></span><div className="love-top-actions">{state?.privacy && <button className="privacy-entry" aria-label="打开数据使用说明与授权设置" onClick={() => setPrivacyManualFor(privacyKey)}><Icon name="shield" />数据使用</button>}<span className={`love-service-state ${state?.worker_online ? 'online' : ''}`}><span />{state?.worker_online ? '助手在线' : '后台离线'}</span><button className="love-account-button" onClick={() => setAuthMode('login')}><Icon name="user" />{state?.account.username ? '账号管理' : '登录 / 注册'}</button></div></header>
       <div className="love-content">
         {error && <div className="love-alert" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}
         {notice && <div className="love-notice" role="status">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
@@ -304,18 +306,20 @@ export default function RelationshipPage() {
           {!!dateTurns.length && <><h2 className="love-subheading">规划结果</h2><div className="love-conversation">{dateTurns.map(renderTurn)}</div></>}
         </section>}
 
-        {state && tab === 'settings' && <section className="love-settings">
-          <div className="love-eyebrow">MAKE IT FEEL LIKE YOU</div><h1>让建议，更像你。</h1>
-          <UsagePanel key={state.account.username ?? 'guest'} />
-          <form onSubmit={event => { event.preventDefault(); void task(async () => { await api('/profile', 'PUT', profile); await refresh(); setNotice('偏好已保存，下一轮生效。') }) }}><label>伴侣称呼<input required maxLength={80} value={profile.partner_name} onChange={event => setProfile({ ...profile, partner_name: event.target.value })} /></label><label>你希望怎样表达<textarea required maxLength={500} rows={4} value={profile.style} onChange={event => setProfile({ ...profile, style: event.target.value })} /></label><button className="love-primary" disabled={saving}>保存偏好</button></form>
-          <div className="love-settings-note"><h2>账号与数据</h2><p>{state.account.username ? `当前账号：${state.account.username}。在其他设备登录同一后端的账号，即可打开同一空间。` : '当前为访客空间。注册账号会保留当前记录；在其他设备登录后可访问同一空间。'}</p><button disabled={busy} onClick={() => setAuthMode('register')}>{state.account.username ? '管理账号' : '注册 / 登录'}</button><a className="love-export" href="/api/relationship/export" download>导出我的数据</a></div>
-          <div className="love-settings-note"><h2>聊天记录导入</h2><p>主动上传 UTF-8 的 TXT 或 JSON 文件（最大 1 MB），咨询时可让助手检索其中的内容。不会自动读取其他微信窗口。</p><label className="love-upload">＋ 导入聊天文件<input hidden type="file" accept=".txt,.json" disabled={saving} onChange={event => { const file = event.target.files?.[0]; if (file) void task(async () => { const form = new FormData(); form.append('file', file); await api('/imports', 'POST', form); await refresh(); setNotice('已导入，可以在聊天中提问“根据导入的聊天……”') }); event.target.value = '' }} /></label>{imports.map(file => <div className="love-import-row" key={file.id}><span>{file.title}</span><button disabled={saving} onClick={() => void task(async () => { setRawDocument(await api<{ title: string; text: string }>(`/items/${file.id}/content`)) })}>查看原文</button><button disabled={saving} onClick={() => void changeItem(file, 'delete')}>删除</button></div>)}</div>
-          <div className="love-settings-note"><h2>后台提醒与通知</h2><p>{state.worker_online ? '后台任务在线。即使关闭网页，到期提醒也会生成并保存。' : '后台任务离线，请启动 Worker。'}系统通知需要打开页面；关闭页面后的外部推送需连接微信。</p><button onClick={() => { if (!('Notification' in window)) { setError('当前浏览器不支持系统通知'); return } void Notification.requestPermission().then(permission => { if (permission === 'granted') { localStorage.setItem('xinyu-notifications', 'enabled'); setNotice('已开启当前浏览器的系统通知。') } else setNotice('未开启系统通知，仍可在提醒收件箱查看。') }) }}>开启本浏览器通知</button></div>
-          <div className="love-settings-note"><h2>截图与微信</h2><p>{state.supports_images ? '视觉模型已配置。先识别并核对文字，再提交分析。' : '视觉模型尚未配置或额度待处理。请在本地 .env 配置 RELATIONSHIP_VISION_MODEL；可另配视觉服务地址和 Key。'}</p><p>个人微信接口已准备，当前{state.weixin.status === 'connected' ? '已授权' : '尚未授权'}。按当前开发范围，本轮只完成网页与接口准备。微信消息发送还需真实账号联调；不会自动获得你与伴侣的私聊。</p></div>
-          <button className="love-danger" disabled={saving || busy} onClick={() => setClearConfirm(true)}>清空对话、记忆、事项与导入记录</button>
-          {clearConfirm && <div className="love-confirm"><p>本空间数据会永久删除。保留账号与表达设置；供应商留存不在此操作范围内。</p><button disabled={saving} onClick={() => void task(async () => { await api('/history', 'DELETE'); setOlder([]); await refresh(); setClearConfirm(false); setNotice('已清空本空间数据。') })}>确认清空</button><button onClick={() => setClearConfirm(false)}>保留数据</button></div>}
-        </section>}
-        {collectionKind && collection.hasMore && <button className="love-load-more" disabled={collection.loading} onClick={() => void collection.loadMore()}>加载更多资料</button>}
+        {state && tab === 'settings' && <SettingsPanel
+          key={`${state.account.username ?? 'guest'}:${settingsSection.key}`} section={settingsSection.key} state={state}
+          profile={profile} onProfile={setProfile} saving={saving} busy={busy} imports={imports}
+          hasMoreImports={collection.hasMore} loadingImports={collection.loading} onLoadMoreImports={collection.loadMore}
+          onSaveProfile={() => task(async () => { await api('/profile', 'PUT', profile); await refresh(); setNotice('偏好已保存，下一轮生效。') })}
+          onAccount={() => setAuthMode('register')}
+          onNotifications={() => { if (!('Notification' in window)) { setError('当前浏览器不支持系统通知'); return } void Notification.requestPermission().then(permission => { if (permission === 'granted') { localStorage.setItem('xinyu-notifications', 'enabled'); setNotice('已开启当前浏览器的系统通知。') } else setNotice('未开启系统通知，仍可在提醒收件箱查看。') }) }}
+          onPrivacy={() => setPrivacyManualFor(privacyKey)}
+          onImport={file => task(async () => { const form = new FormData(); form.append('file', file); await api('/imports', 'POST', form); await refresh(); setNotice('已导入，可在资料检索中查看。') })}
+          onView={file => task(async () => { setRawDocument(await api<{ title: string; text: string }>(`/items/${file.id}/content`)) })}
+          onDelete={file => changeItem(file, 'delete')}
+          onClear={() => task(async () => { await api('/history', 'DELETE'); setOlder([]); await refresh(); setNotice('已清空本空间数据。') })}
+        />}
+        {collectionKind && tab !== 'settings' && collection.hasMore && <button className="love-load-more" disabled={collection.loading} onClick={() => void collection.loadMore()}>加载更多资料</button>}
       </div>
     </main>
 
