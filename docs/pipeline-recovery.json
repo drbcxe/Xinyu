@@ -1,0 +1,77 @@
+{
+  "scenario": "single-slot Worker crash, bounded capacity wait, natural lease expiry and accounting",
+  "synthetic_corpus": {
+    "owners": 1,
+    "documents": 8,
+    "embedding_dimensions": 512,
+    "embedding_model": "BAAI/bge-small-zh-v1.5"
+  },
+  "stranded_slot_after_crash": {
+    "active": 1,
+    "limit": 1,
+    "next_expiry_seconds": 49
+  },
+  "task": {
+    "status": "succeeded",
+    "attempts": 2,
+    "capacity_deferrals": 6,
+    "resumed_from_checkpoint": true,
+    "elapsed_ms": 60191.57
+  },
+  "unknown_call_reconciliation": {
+    "status": "uncertain",
+    "charged_tokens": 14256,
+    "reserved_tokens": 14256,
+    "seconds_from_reservation": 184.479
+  },
+  "model_ledger": {
+    "completed": 4,
+    "uncertain": 1
+  },
+  "final_provider_capacity": {
+    "active": 0,
+    "limit": 1,
+    "next_expiry_seconds": null
+  },
+  "logical_execution_reserved_bytes": 0,
+  "turns": 1,
+  "synthetic_model": {
+    "calls": {
+      "rerank": 2,
+      "tool": 2,
+      "answer": 1
+    },
+    "peak_concurrent": 1
+  },
+  "resource_observations": {
+    "samples": 1352,
+    "sampled_api_worker_peak_rss_mib": 545.34,
+    "max_queued": 1,
+    "max_running": 1,
+    "max_provider_slots": 1,
+    "sampling_interval_ms": 100
+  },
+  "data_origin": "synthetic",
+  "model_protocol": "local deterministic OpenAI-compatible peer; no paid model calls",
+  "python": "3.12.15",
+  "os": "Windows 11",
+  "logical_cpus": 24,
+  "memory_gib": 15.74,
+  "source_code_sha256": "7cb9c4880587a629faa0e1fb644cbaf89758ea9df1a58b5b07e8f75ced27b1f2",
+  "git_revision": "b934e0681694499156fbf5cbf4788a3ac86f8239",
+  "git_worktree_dirty": true,
+  "recorded_at": "2026-10-28T04:44:54.028731+00:00",
+  "benchmark_sha256": "94f60e99c3c7a4ec5876a42fdbc7cd055c958f8e6dfaa74be8cad7f9da6b5579",
+  "note": "Small local workload, not a production SLA. API/Worker RSS excludes DB/Qdrant, preparation process and OS cache; 100 ms sampling may miss peaks. Worker interruption uses a 15-second lease rather than production default 90 seconds; timeout settings are listed explicitly in limits.",
+  "limits": {
+    "global_queue_limit": 8,
+    "worker_advice_concurrency": 2,
+    "global_model_concurrency": 1,
+    "worker_lease_seconds": 15,
+    "agent_timeout_seconds": 15,
+    "model_timeout_seconds": 5,
+    "worker_capacity_wait_seconds": 900
+  },
+  "resources_cleaned": true,
+  "private_runtime_cleaned": true
+}

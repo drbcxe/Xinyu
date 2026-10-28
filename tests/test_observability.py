@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -162,3 +163,42 @@ def test_alert_transitions_persist_without_private_content(backend):
     assert json.loads(get_redis().get("xinyu:ops:alerts")) == alerts
     ops_status.update_alerts([])
     assert get_redis().get("xinyu:ops:alerts") == "[]"
+
+
+def test_unknown_reservations_and_slots_are_visible_until_conservative_settlement(
+    backend,
+):
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy.orm import Session
+
+    from app.models.relationship import RelationshipModelCall
+    from app.repositories.database import get_engine
+    from app.services.resource_control import (
+        operation_scope,
+        provider_slot,
+        reconcile_abandoned_calls,
+        reserve_call,
+    )
+    from tests.test_resource_control import owner
+
+    value = owner()
+    with operation_scope(value, "ops-reservation", "advice"):
+        call_id, _ = reserve_call("fixture", 500, 100)
+    with Session(get_engine()) as db:
+        db.get(RelationshipModelCall, call_id).created_at = datetime.now(
+            UTC
+        ) - timedelta(hours=1)
+        db.commit()
+    with provider_slot(time.monotonic() + 15):
+        metrics = ops_status.queue_metrics()
+        assert metrics["model_slots"]["active"] == 1
+        assert metrics["model_reservations"]["count"] == 1
+        alerts = ops_status.alert_findings(
+            {"ready": True, "checks": {"worker": True}}, metrics, {}
+        )
+        assert "MODEL_RESERVATION_STALE" in alerts
+        assert reconcile_abandoned_calls() == 1
+    metrics = ops_status.queue_metrics()
+    assert metrics["model_slots"]["active"] == 0
+    assert metrics["model_reservations"]["count"] == 0

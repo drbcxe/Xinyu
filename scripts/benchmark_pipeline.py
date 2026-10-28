@@ -42,7 +42,11 @@ from app.services.relationship_rag import (
     process_index,
     schedule_index,
 )
-from app.services.resource_control import SLOT_KEY
+from app.services.resource_control import (
+    SLOT_KEY,
+    provider_capacity,
+    reservation_grace_seconds,
+)
 from app.services.storage_budget import global_storage_summary
 from app.services.vector_capacity import reconcile_vectors
 from quality.environment import isolated_space
@@ -52,7 +56,7 @@ from scripts.benchmark_retrieval import stats
 
 
 @contextmanager
-def configuration(provider_url):
+def configuration(provider_url, recovery=False):
     changes = {
         "MODEL_BASE_URL": provider_url,
         "MODEL_NAME": "local-synthetic-probe",
@@ -73,6 +77,14 @@ def configuration(provider_url):
         "LANGCHAIN_TRACING_V2": "false",
         "PYTHONUTF8": "1",
     }
+    if recovery:
+        changes.update(
+            {
+                "GLOBAL_MODEL_CONCURRENCY": "1",
+                "MODEL_TIMEOUT_SECONDS": "5",
+                "AGENT_TIMEOUT_SECONDS": "15",
+            }
+        )
     previous = {key: os.environ.get(key) for key in changes}
     os.environ.update(changes)
     get_settings.cache_clear()
@@ -240,13 +252,13 @@ class Sampler:
         }
 
 
-def wait_until(probe, seconds=120):
+def wait_until(probe, seconds=120, interval=0.2):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         value = probe()
         if value:
             return value
-        time.sleep(0.2)
+        time.sleep(interval)
     raise RuntimeError("Pipeline probe exceeded its bounded wait")
 
 
@@ -633,9 +645,133 @@ def workload(base, cleanup, processes, state, steady, runtime_root):
     return report
 
 
+def recovery_workload(base, cleanup, processes, state, runtime_root):
+    token = "g_" + secrets.token_hex(32)
+    corpus = seed([token])
+    client = cleanup.enter_context(
+        httpx.Client(
+            base_url=base,
+            trust_env=False,
+            timeout=15,
+            headers={"Origin": "http://localhost:5173"},
+        )
+    )
+    client.cookies.set(COOKIE, token, path="/api/relationship")
+    choice = client.get("/api/relationship/privacy").json()
+    client.put(
+        "/api/relationship/privacy",
+        json={
+            "version": choice["version"],
+            "provider_fingerprint": choice["provider_fingerprint"],
+            "allow_model_processing": True,
+            "history_days": 90,
+        },
+    ).raise_for_status()
+    with Sampler(processes) as memory:
+        row = submit(client, "slow")
+        assert row["status"] == 202
+        worker = launch_role("worker", cleanup, processes, runtime_root)
+        wait_until(lambda: state.has_entered(row["request_key"]))
+        with Session(get_engine()) as db:
+            call = db.scalar(
+                select(RelationshipModelCall).where(
+                    RelationshipModelCall.operation_id == str(UUID(row["request_key"])),
+                    RelationshipModelCall.status == "reserved",
+                )
+            )
+            assert call
+            unknown_id, reserved, created_at = (
+                call.id,
+                call.reserved_tokens,
+                call.created_at,
+            )
+        stop_owned(worker)
+        stranded = provider_capacity()
+        assert stranded["active"] == 1
+        launch_role("worker", cleanup, processes, runtime_root)
+        row = finish(client, row)
+        verify_success(row)
+        result = row["terminal"]
+        assert (
+            result["attempts"] == 2
+            and result["capacity_deferrals"] > get_settings().worker_max_attempts
+        )
+        assert result["turn"]["result"]["execution"]["resumed"]
+        assert provider_capacity()["active"] == 0
+        assert global_storage_summary()["reserved_bytes"] == 0
+        print(
+            "single-slot task recovered without exhausting retries; waiting for natural accounting reconciliation",
+            flush=True,
+        )
+
+        def reconciled():
+            with Session(get_engine()) as db:
+                entry = db.get(RelationshipModelCall, unknown_id)
+                if entry.status == "reserved":
+                    return None
+                assert entry.status == "uncertain" and entry.charged_tokens == reserved
+                assert entry.completed_at >= created_at
+                return {
+                    "status": entry.status,
+                    "charged_tokens": entry.charged_tokens,
+                    "reserved_tokens": reserved,
+                    "seconds_from_reservation": round(
+                        (entry.completed_at - created_at).total_seconds(), 3
+                    ),
+                }
+
+        accounting = wait_until(
+            reconciled, seconds=reservation_grace_seconds() + 120, interval=1
+        )
+        with Session(get_engine()) as db:
+            assert db.scalar(select(func.count()).select_from(RelationshipTurn)) == 1
+            assert (
+                db.scalar(
+                    select(func.count())
+                    .select_from(RelationshipModelCall)
+                    .where(RelationshipModelCall.status == "reserved")
+                )
+                == 0
+            )
+            ledger = dict(
+                db.execute(
+                    select(RelationshipModelCall.status, func.count()).group_by(
+                        RelationshipModelCall.status
+                    )
+                ).all()
+            )
+        report = {
+            "scenario": "single-slot Worker crash, bounded capacity wait, natural lease expiry and accounting",
+            "synthetic_corpus": corpus,
+            "stranded_slot_after_crash": stranded,
+            "task": {
+                "status": result["status"],
+                "attempts": result["attempts"],
+                "capacity_deferrals": result["capacity_deferrals"],
+                "resumed_from_checkpoint": True,
+                "elapsed_ms": round(row["elapsed_ms"], 3),
+            },
+            "unknown_call_reconciliation": accounting,
+            "model_ledger": ledger,
+            "final_provider_capacity": provider_capacity(),
+            "logical_execution_reserved_bytes": global_storage_summary()[
+                "reserved_bytes"
+            ],
+            "turns": 1,
+            "synthetic_model": state.snapshot(),
+        }
+    report["resource_observations"] = memory.result()
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steady", type=int, default=24, choices=range(12, 37, 12))
+    parser.add_argument(
+        "--recovery-only",
+        action="store_true",
+        help="Observe natural single-slot crash recovery and unknown-call reconciliation",
+    )
     parser.add_argument(
         "--child-role", choices=["api", "worker"], help=argparse.SUPPRESS
     )
@@ -657,7 +793,7 @@ def main():
             raise SystemExit("This probe only supports local infrastructure")
     with (
         local_provider() as (provider_url, state),
-        configuration(provider_url),
+        configuration(provider_url, recovery=args.recovery_only),
         isolated_space() as space,
     ):
         # Exercise explicit consent rather than the evaluation-only bypass.
@@ -679,8 +815,12 @@ def main():
             api = launch_role("api", cleanup, processes, runtime_root, port)
             base = f"http://127.0.0.1:{port}"
             wait_api(base, api)
-            report = workload(
-                base, cleanup, processes, state, args.steady, runtime_root
+            report = (
+                recovery_workload(base, cleanup, processes, state, runtime_root)
+                if args.recovery_only
+                else workload(
+                    base, cleanup, processes, state, args.steady, runtime_root
+                )
             )
         report.update(
             {
@@ -710,7 +850,7 @@ def main():
                 "benchmark_sha256": hashlib.sha256(
                     Path(__file__).read_bytes().replace(b"\r\n", b"\n")
                 ).hexdigest(),
-                "note": "Small local workload, not a production SLA. API/Worker RSS excludes DB/Qdrant, preparation process and OS cache; 100 ms sampling may miss peaks. Worker interruption uses a 15-second lease rather than production default 90 seconds.",
+                "note": "Small local workload, not a production SLA. API/Worker RSS excludes DB/Qdrant, preparation process and OS cache; 100 ms sampling may miss peaks. Worker interruption uses a 15-second lease rather than production default 90 seconds; timeout settings are listed explicitly in limits.",
                 "limits": {
                     key: getattr(get_settings(), key)
                     for key in [
@@ -719,6 +859,8 @@ def main():
                         "global_model_concurrency",
                         "worker_lease_seconds",
                         "agent_timeout_seconds",
+                        "model_timeout_seconds",
+                        "worker_capacity_wait_seconds",
                     ]
                 },
             }
@@ -727,7 +869,11 @@ def main():
     report["private_runtime_cleaned"] = not runtime_root.exists()
     folder = PROJECT_ROOT / ".runtime" / "benchmarks"
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / ("pipeline-" + space.run_id + ".json")
+    path = folder / (
+        ("pipeline-recovery-" if args.recovery_only else "pipeline-")
+        + space.run_id
+        + ".json"
+    )
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
     print("REPORT " + str(path), flush=True)
 

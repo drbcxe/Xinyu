@@ -39,6 +39,8 @@ Worker 每分钟在独立维护线程检测依赖不就绪、Worker 心跳消失
 
 这些告警目前没有短信、邮件或外部监控推送，不表示有人值守；没有擅自接入第三方平台。维护线程与分析、索引、微信通道及邮件线程分开，慢速清理不阻塞主循环的 Worker 心跳。
 
+`queues.model_slots`、`queues.model_reservations`、`queues.capacity_waiting_jobs` 区分活跃槽位、未知用量预留和容量等待。预留超过保守清算阈值再加两分钟时出现 `MODEL_RESERVATION_STALE`，不要仅因状态暂时非零就手动删槽或当作免费请求。字段、期限和真实时间恢复验收见 [模型容量恢复](./model-capacity-recovery.md)。
+
 故障排查顺序：先看 `/api/ready`，再用 `scripts.ops` 区分依赖、积压和任务失败；持有请求编号时，在 API 日志中定位 job ID，再查看同一 job ID 的 Worker 事件。日志故意不含原文与完整异常，不应为排错临时打开敏感请求日志。
 
 参考：[Prometheus 指标与标签规范](https://prometheus.io/docs/practices/naming/)。

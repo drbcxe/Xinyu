@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     worker_lease_seconds: int = Field(default=90, ge=15, le=600)
     worker_max_attempts: int = Field(default=3, ge=1, le=10)
     worker_retry_base_seconds: int = Field(default=5, ge=1, le=300)
+    worker_capacity_wait_seconds: int = Field(default=900, ge=30, le=3600)
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_security: str = "starttls"

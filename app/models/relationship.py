@@ -129,6 +129,12 @@ class RelationshipJob(Base):
     turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     error: Mapped[str] = mapped_column(Text, default="")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    capacity_deferrals: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    capacity_wait_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -197,6 +203,9 @@ class RelationshipDailyUsage(Base):
 
 class RelationshipModelCall(Base):
     __tablename__ = "relationship_model_calls"
+    __table_args__ = (
+        Index("ix_relationship_model_calls_pending", "status", "created_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     owner: Mapped[str] = mapped_column(String(64), index=True)
     operation_id: Mapped[str] = mapped_column(String(80), index=True)

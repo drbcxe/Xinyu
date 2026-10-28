@@ -82,6 +82,11 @@ def probe_readiness(cached=True):
 
 
 def queue_metrics():
+    from app.services.resource_control import (
+        provider_capacity,
+        reservation_grace_seconds,
+    )
+
     with Session(get_engine()) as db:
         result = {
             name: dict(
@@ -112,6 +117,32 @@ def queue_metrics():
                 .group_by(RelationshipModelCall.status)
             ).all()
         )
+        count, oldest = db.execute(
+            select(func.count(), func.min(RelationshipModelCall.created_at)).where(
+                RelationshipModelCall.status == "reserved"
+            )
+        ).one()
+        result["model_reservations"] = {
+            "count": count,
+            "oldest_seconds": max(
+                0, round((datetime.now(UTC) - oldest).total_seconds())
+            )
+            if oldest
+            else 0,
+            "reconcile_after_seconds": reservation_grace_seconds(),
+        }
+        result["capacity_waiting_jobs"] = db.scalar(
+            select(func.count())
+            .select_from(RelationshipJob)
+            .where(
+                RelationshipJob.status == "queued",
+                RelationshipJob.capacity_wait_started_at.is_not(None),
+            )
+        )
+        try:
+            result["model_slots"] = provider_capacity()
+        except AppError:
+            result["model_slots"] = {"unavailable": True}
         return result
 
 
@@ -134,6 +165,12 @@ def alert_findings(readiness, queues, http, storage=None):
         findings.append("WORKER_OFFLINE")
     if queues.get("oldest_queue_seconds", 0) > 60:
         findings.append("QUEUE_STALLED")
+    reservations = queues.get("model_reservations", {})
+    if (
+        reservations.get("oldest_seconds", 0)
+        > reservations.get("reconcile_after_seconds", 0) + 120
+    ):
+        findings.append("MODEL_RESERVATION_STALE")
     if queues.get("indexes", {}).get("delete_failed", 0):
         findings.append("INDEX_DELETE_FAILED")
     if queues.get("indexes", {}).get("quota_blocked", 0):

@@ -149,6 +149,8 @@ def job_data(job: RelationshipJob):
             "updated_at",
             "cancel_requested",
             "attempts",
+            "capacity_deferrals",
+            "capacity_wait_started_at",
             "available_at",
         )
     }
@@ -195,6 +197,16 @@ def process_one() -> bool:
             .with_for_update(skip_locked=True)
             .limit(20)
         ).all():
+            if (
+                candidate.capacity_wait_started_at
+                and now
+                >= candidate.capacity_wait_started_at
+                + timedelta(seconds=settings.worker_capacity_wait_seconds)
+            ):
+                candidate.status = "failed"
+                candidate.error = "模型资源等待超时，请稍后手动重试"
+                candidate.updated_at = now
+                continue
             profile = db.scalar(
                 select(RelationshipProfile)
                 .where(RelationshipProfile.owner == candidate.owner)
@@ -343,11 +355,13 @@ def process_one() -> bool:
                 )
                 db.add(turn)
             job.status, job.turn_id, job.error = "succeeded", turn.id, ""
+            job.capacity_wait_started_at = None
             job.lease_token, job.lease_expires_at = None, None
             job.updated_at = datetime.now(UTC)
             db.commit()
             logger.info("job_finished", extra={"job_id": job_id})
     except Exception as exc:  # noqa: BLE001 - durable task boundary
+        capacity_deferred = False
         quota_failure = isinstance(exc, AppError) and exc.code in {
             "SPACE_QUOTA_EXCEEDED",
             "GLOBAL_STORAGE_QUOTA_EXCEEDED",
@@ -362,6 +376,8 @@ def process_one() -> bool:
                 .with_for_update()
             )
             if job and job.status == "running" and job.lease_token == lease_token:
+                stamp = datetime.now(UTC)
+                capacity_busy = isinstance(exc, AppError) and exc.code == "MODEL_BUSY"
                 retryable = not isinstance(exc, AppError) or exc.status_code in {
                     502,
                     503,
@@ -388,6 +404,27 @@ def process_one() -> bool:
                     and job.attempts < settings.worker_max_attempts
                     and not job.cancel_requested
                 )
+                delay = settings.worker_retry_base_seconds * 2 ** max(
+                    0, job.attempts - 1
+                )
+                if capacity_busy:
+                    job.capacity_wait_started_at = job.capacity_wait_started_at or stamp
+                    job.capacity_deferrals += 1
+                    # Capacity refusal is not an execution failure. All HTTP attempts remain budgeted.
+                    job.attempts = max(0, job.attempts - 1)
+                    remaining = (
+                        settings.worker_capacity_wait_seconds
+                        - (stamp - job.capacity_wait_started_at).total_seconds()
+                    )
+                    retry = remaining > 0 and not job.cancel_requested
+                    details = exc.details if isinstance(exc.details, dict) else {}
+                    requested = details.get("retry_after_seconds", 5)
+                    delay = max(
+                        1, min(5, requested if type(requested) is int else 5, remaining)
+                    )
+                    capacity_deferred = retry
+                else:
+                    job.capacity_wait_started_at = None
                 job.status = (
                     "queued"
                     if retry
@@ -400,17 +437,19 @@ def process_one() -> bool:
                     if isinstance(exc, AppError)
                     else "任务暂未完成，请稍后重试"
                 )
+                if capacity_busy and not retry and not job.cancel_requested:
+                    job.error = "模型资源等待超时，请稍后手动重试"
                 job.lease_token, job.lease_expires_at = None, None
-                job.available_at = datetime.now(UTC) + timedelta(
-                    seconds=settings.worker_retry_base_seconds
-                    * 2 ** max(0, job.attempts - 1)
-                )
+                job.available_at = stamp + timedelta(seconds=delay)
                 job.updated_at = datetime.now(UTC)
                 db.commit()
-        logger.warning(
-            "relationship_job_failed",
-            extra={"job_id": job_id, "error_type": type(exc).__name__},
-        )
+        if capacity_deferred:
+            logger.info("job_capacity_deferred", extra={"job_id": job_id})
+        else:
+            logger.warning(
+                "relationship_job_failed",
+                extra={"job_id": job_id, "error_type": type(exc).__name__},
+            )
     finally:
         stop.set()
         thread.join(timeout=2)

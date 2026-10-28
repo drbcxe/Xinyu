@@ -261,6 +261,7 @@ def retry_run(run_id: UUID, request: Request, db: DB, owner: Owner):
     job.status, job.error, job.updated_at = "queued", "", datetime.now(UTC)
     job.cancel_requested, job.available_at = False, datetime.now(UTC)
     job.lease_token, job.lease_expires_at = None, None
+    job.attempts, job.capacity_deferrals, job.capacity_wait_started_at = 0, 0, None
     db.commit()
     return job_data(job)
 

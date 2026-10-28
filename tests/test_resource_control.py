@@ -174,6 +174,16 @@ def test_provider_concurrency_and_cleanup(backend):
         with pytest.raises(AppError) as failure, provider_slot(time.monotonic() + 10):
             pass
         assert failure.value.code == "MODEL_BUSY"
+
+
+def test_shorter_call_cannot_expire_another_live_provider_slot(backend):
+    backend.global_model_concurrency = 2
+    cache = get_redis()
+    with provider_slot(time.monotonic() + 120), provider_slot(time.monotonic() + 10):
+        last_expiry = cache.zrange(SLOT_KEY, -1, -1, withscores=True)[0][1]
+        seconds, microseconds = cache.time()
+        remaining = last_expiry - seconds * 1000 - microseconds // 1000
+        assert cache.pttl(SLOT_KEY) >= remaining + 60000 - 500
     assert get_redis().zcard(SLOT_KEY) == 0
 
 

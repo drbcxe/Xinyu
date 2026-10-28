@@ -74,6 +74,8 @@ pnpm dev
 - [邮箱绑定与密码找回](./docs/email-recovery.md)
 - [账号注销、清理回执与反馈](./docs/account-closure-feedback.md)
 - [任务控制、用量与分页读取](./docs/task-controls.md)
+- [模型资源等待与崩溃恢复](./docs/model-capacity-recovery.md)
+- [HTTP、队列与 Agent 链路实测](./docs/pipeline-performance.md)
 - [工程化完整范围与进度](./docs/enterprise-readiness.md)
 - [运行状态、日志与告警](./docs/observability.md)
 - [Agent 质量评测与版本比较](./docs/agent-evaluation.md)

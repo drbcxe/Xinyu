@@ -1,6 +1,7 @@
 import json
 import secrets
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -24,7 +25,7 @@ from app.services.graph_checkpoints import checkpoint_store
 from app.services.privacy_policy import POLICY_VERSION, provider_fingerprint
 from app.services.relationship_auth import COOKIE, token_hash
 from app.services.relationship_jobs import enqueue, process_one
-from app.services.resource_control import usage_summary
+from app.services.resource_control import provider_slot, usage_summary
 
 
 def create_job(owner=None, request_id=None, content="synthetic question"):
@@ -54,6 +55,7 @@ def job_state(job_id):
             {
                 "status": row.status,
                 "attempts": row.attempts,
+                "capacity_deferrals": row.capacity_deferrals,
                 "token": row.lease_token,
                 "available_at": row.available_at,
                 "error": row.error,
@@ -274,6 +276,108 @@ def test_expired_lease_is_reclaimed(backend, monkeypatch):
         job_state(job_id)["status"] == "succeeded"
         and job_state(job_id)["attempts"] == 2
     )
+
+
+def test_capacity_wait_does_not_exhaust_execution_retries(backend, monkeypatch):
+    backend.global_model_concurrency = 1
+    backend.worker_max_attempts = 2
+    _, job_id, _ = create_job()
+
+    def controlled_agent(*_args, **_kwargs):
+        with provider_slot(time.monotonic() + 60):
+            return {"analysis": "capacity recovered"}
+
+    monkeypatch.setattr(relationship_jobs, "run_agent", controlled_agent)
+    with provider_slot(time.monotonic() + 120):
+        for _ in range(4):
+            assert process_one()
+            state = job_state(job_id)
+            assert state["status"] == "queued"
+            assert state["attempts"] == 0
+            assert state["available_at"] > datetime.now(UTC)
+            with Session(get_engine()) as db:
+                db.get(RelationshipJob, job_id).available_at = datetime.now(
+                    UTC
+                ) - timedelta(seconds=1)
+                db.commit()
+    assert process_one()
+    assert job_state(job_id)["status"] == "succeeded"
+    assert job_state(job_id)["capacity_deferrals"] == 4
+    assert job_state(job_id)["attempts"] == 1
+
+
+def test_capacity_wait_deadline_stops_without_more_agent_calls(backend, monkeypatch):
+    from app.models.relationship import RelationshipStorageReservation
+
+    _, job_id, _ = create_job()
+    with Session(get_engine()) as db:
+        job = db.get(RelationshipJob, job_id)
+        job.capacity_wait_started_at = datetime.now(UTC) - timedelta(
+            seconds=backend.worker_capacity_wait_seconds + 1
+        )
+        job.capacity_deferrals = 4
+        db.commit()
+    monkeypatch.setattr(
+        relationship_jobs,
+        "run_agent",
+        lambda *_a, **_kw: pytest.fail("expired wait must not call agent"),
+    )
+    assert not process_one()
+    assert job_state(job_id)["status"] == "failed"
+    with Session(get_engine()) as db:
+        assert (
+            db.get(RelationshipJob, job_id).error == "模型资源等待超时，请稍后手动重试"
+        )
+        assert not db.get(RelationshipStorageReservation, job_id)
+
+
+def test_manual_retry_resets_failure_and_capacity_wait_but_not_usage(backend):
+    token = "g_" + secrets.token_hex(32)
+    owner, job_id, _ = create_job(token_hash(token))
+    with Session(get_engine()) as db:
+        job = db.get(RelationshipJob, job_id)
+        job.status, job.attempts = "failed", backend.worker_max_attempts
+        job.capacity_wait_started_at = datetime.now(UTC) - timedelta(hours=1)
+        job.capacity_deferrals = 4
+        db.commit()
+    with TestClient(app, base_url="http://localhost") as client:
+        client.cookies.set(COOKIE, token, path="/api/relationship")
+        response = client.post(f"/api/relationship/runs/{job_id}/retry")
+    assert response.status_code == 200
+    value = response.json()
+    assert value["status"] == "queued" and value["attempts"] == 0
+    assert (
+        value["capacity_deferrals"] == 0 and value["capacity_wait_started_at"] is None
+    )
+    with Session(get_engine()) as db:
+        assert usage_summary(db, owner)["requests"] == 2
+
+
+def test_waiting_for_capacity_can_be_cancelled_without_a_saved_turn(
+    backend, monkeypatch
+):
+    backend.global_model_concurrency = 1
+    token = "g_" + secrets.token_hex(32)
+    _, job_id, _ = create_job(token_hash(token))
+
+    def blocked(*_a, **_kw):
+        with provider_slot(time.monotonic() + 10):
+            pytest.fail("saturated capacity must not reach model execution")
+
+    monkeypatch.setattr(relationship_jobs, "run_agent", blocked)
+    with (
+        provider_slot(time.monotonic() + 60),
+        TestClient(app, base_url="http://localhost") as client,
+    ):
+        assert process_one()
+        assert job_state(job_id)["capacity_deferrals"] == 1
+        client.cookies.set(COOKIE, token, path="/api/relationship")
+        response = client.post(f"/api/relationship/runs/{job_id}/cancel")
+        assert response.status_code == 200
+        assert not process_one()
+    assert job_state(job_id)["status"] == "cancelled"
+    with Session(get_engine()) as db:
+        assert not db.get(RelationshipJob, job_id).turn_id
 
 
 def test_second_worker_does_not_run_same_owner_concurrently(backend, monkeypatch):

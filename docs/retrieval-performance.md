@@ -59,6 +59,6 @@ Windows 11、24 个逻辑 CPU、15.74 GiB 内存的最终独立运行结果如�
 - 限制匿名空间与账号元数据的增长，区分逻辑内容字节、向量估算、数据库物理文件、日志/备份和 D 盘剩余空间。
 - 验证真实图保存、并发配额、失败回滚、删除释放、迁移回填、备份恢复和界面用量展示；再审计 E01/E11，不能仅用缓存测试宣布全部完成。
 
-向量点位准入预算与故障清理已补充，见 [vector-capacity.md](./vector-capacity.md)；日志/备份/恢复明文的写前预算及磁盘空闲拒绝已完成并验收，见 [runtime-file-budgets.md](./runtime-file-budgets.md)。真实 HTTP/队列/LangGraph/混合检索配本地模型协议服务的小规模并发及故障实测见 [pipeline-performance.md](./pipeline-performance.md)。PG/WAL/Qdrant/Docker 服务卷物理边界、低并发崩溃后的全部容量恢复、长时负载及真实供应商性能仍待后续验收，未把局部数据库或文件预算标成全部容量工作完成。
+向量点位准入预算与故障清理已补充，见 [vector-capacity.md](./vector-capacity.md)；日志/备份/恢复明文的写前预算及磁盘空闲拒绝已完成并验收，见 [runtime-file-budgets.md](./runtime-file-budgets.md)。真实 HTTP/队列/LangGraph/混合检索配本地模型协议服务的小规模并发及故障实测见 [pipeline-performance.md](./pipeline-performance.md)，单槽崩溃后的自然资源恢复与保守费用清算见 [model-capacity-recovery.md](./model-capacity-recovery.md)。PG/WAL/Qdrant/Docker 服务卷物理边界、删除意图日志增长、长时负载及真实供应商性能仍待后续验收，未把局部数据库或文件预算标成全部容量工作完成。
 
 参考：[psutil RSS 定义](https://psutil.readthedocs.io/stable/index.html)。

@@ -454,3 +454,34 @@ def test_pressure_cleanup_drops_only_completed_buffers_not_user_history(
     assert snapshot(value)["by_category"].get("graph", 0) == 0
     clear_checkpoints(value)
     assert_counters_match_rows()
+
+
+def test_capacity_wait_migration_preserves_jobs_and_atomic_accounting(
+    backend, infrastructure
+):
+    from alembic import command
+    from alembic.config import Config
+
+    value, job_id, _ = create_job()
+    before = snapshot(value)
+    assert get_engine().url.database == infrastructure.database_name
+    assert infrastructure.database_name.startswith("xinyu_test_")
+    config = Config("alembic.ini")
+    command.downgrade(config, "0c58ad62f901")
+    try:
+        with get_engine().connect() as conn:
+            assert (
+                conn.scalar(
+                    text("SELECT status FROM relationship_jobs WHERE id=:id"),
+                    {"id": job_id},
+                )
+                == "queued"
+            )
+    finally:
+        command.upgrade(config, "head")
+    with Session(get_engine()) as db:
+        row = db.get(RelationshipJob, job_id)
+        assert row.status == "queued" and row.capacity_deferrals == 0
+        assert row.capacity_wait_started_at is None
+    assert snapshot(value) == before
+    assert_counters_match_rows()

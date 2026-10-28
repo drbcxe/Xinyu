@@ -33,10 +33,14 @@ TAKE_SLOT = """
 local clock=redis.call('TIME')
 local now=tonumber(clock[1])*1000+math.floor(tonumber(clock[2])/1000)
 redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now)
-if redis.call('ZCARD',KEYS[1]) >= tonumber(ARGV[1]) then return 0 end
+if redis.call('ZCARD',KEYS[1]) >= tonumber(ARGV[1]) then
+ local first=redis.call('ZRANGE',KEYS[1],0,0,'WITHSCORES')
+ return {0,math.max(1,math.ceil((tonumber(first[2])-now)/1000))}
+end
 redis.call('ZADD',KEYS[1],now+tonumber(ARGV[3]),ARGV[2])
-redis.call('PEXPIRE',KEYS[1],tonumber(ARGV[3])+60000)
-return 1
+local last=redis.call('ZRANGE',KEYS[1],-1,-1,'WITHSCORES')
+redis.call('PEXPIRE',KEYS[1],math.max(60000,math.ceil(tonumber(last[2])-now)+60000))
+return {1,0}
 """
 
 
@@ -377,7 +381,7 @@ def provider_slot(deadline: float):
         ),
     )
     with auth_cache() as cache:
-        acquired = cache.eval(
+        acquired, expiry_seconds = cache.eval(
             TAKE_SLOT,
             1,
             SLOT_KEY,
@@ -387,7 +391,13 @@ def provider_slot(deadline: float):
         )
     if not acquired:
         raise AppError(
-            503, "MODEL_BUSY", "模型服务正忙，请稍后重试", {"retry_after_seconds": 5}
+            503,
+            "MODEL_BUSY",
+            "模型资源暂时占用，请稍后再试",
+            {
+                "retry_after_seconds": min(5, expiry_seconds),
+                "lease_expiry_seconds": expiry_seconds,
+            },
         )
     try:
         yield
@@ -397,6 +407,27 @@ def provider_slot(deadline: float):
                 cache.zrem(SLOT_KEY, token)
         except AppError:
             logging.getLogger(__name__).warning("model_slot_release_failed")
+
+
+def provider_capacity():
+    with auth_cache() as cache:
+        seconds, micros = cache.time()
+        now = seconds * 1000 + micros // 1000
+        first = cache.zrangebyscore(
+            SLOT_KEY, now + 1, "+inf", start=0, num=1, withscores=True
+        )
+        return {
+            "active": cache.zcount(SLOT_KEY, now + 1, "+inf"),
+            "limit": get_settings().global_model_concurrency,
+            "next_expiry_seconds": max(0, math.ceil((first[0][1] - now) / 1000))
+            if first
+            else None,
+        }
+
+
+def reservation_grace_seconds():
+    settings = get_settings()
+    return max(settings.agent_timeout_seconds, settings.model_timeout_seconds) * 2 + 120
 
 
 def usage_summary(db: Session, owner: str) -> dict:
@@ -431,11 +462,7 @@ def usage_summary(db: Session, owner: str) -> dict:
 
 
 def reconcile_abandoned_calls() -> int:
-    settings = get_settings()
-    cutoff = datetime.now(UTC) - timedelta(
-        seconds=max(settings.agent_timeout_seconds, settings.model_timeout_seconds) * 2
-        + 120
-    )
+    cutoff = datetime.now(UTC) - timedelta(seconds=reservation_grace_seconds())
     with Session(get_engine()) as db:
         ids = list(
             db.scalars(

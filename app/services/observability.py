@@ -25,6 +25,7 @@ EVENTS = {
     "relationship_job_failed",
     "job_started",
     "job_finished",
+    "job_capacity_deferred",
     "model_completed",
     "job_heartbeat_failed",
     "job_progress_unavailable",
