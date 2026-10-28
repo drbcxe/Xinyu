@@ -3,7 +3,7 @@ import { api } from '../relationshipApi'
 import type { PrivacyStatus } from '../relationshipApi'
 import './PrivacyPanel.css'
 
-export default function PrivacyPanel({ value, compact = false, onRefresh }: { value: PrivacyStatus; compact?: boolean; onRefresh: () => Promise<unknown> }) {
+export default function PrivacyPanel({ value, compact = false, onRefresh, onBusyChange, onSaved }: { value: PrivacyStatus; compact?: boolean; onRefresh: () => Promise<unknown>; onBusyChange?: (busy: boolean) => void; onSaved?: (allowed: boolean) => void }) {
   const [checked, setChecked] = useState(value.accepted)
   const [days, setDays] = useState(value.history_days)
   const [busy, setBusy] = useState(false)
@@ -11,17 +11,17 @@ export default function PrivacyPanel({ value, compact = false, onRefresh }: { va
   const [saved, setSaved] = useState(false)
 
   async function save(allow: boolean) {
-    setBusy(true); setError(''); setSaved(false)
+    setBusy(true); onBusyChange?.(true); setError(''); setSaved(false)
     try {
       await api('/privacy', 'PUT', { version: value.version, provider_fingerprint: value.provider_fingerprint, allow_model_processing: allow, history_days: days })
       setChecked(allow)
-      await onRefresh(); setSaved(true)
+      await onRefresh(); setSaved(true); onSaved?.(allow)
     } catch (err) { setError((err as Error).message) }
-    finally { setBusy(false) }
+    finally { setBusy(false); onBusyChange?.(false) }
   }
 
   return <section className={`privacy-panel${compact ? ' compact' : ''}`} aria-label="AI 数据与保留设置">
-    <div className="privacy-heading"><span aria-hidden="true">◇</span><div><h2>{value.accepted ? '你的数据，由你决定' : '开始前，了解你的数据如何使用'}</h2><p>{value.accepted ? '已允许当前空间使用下列模型服务，可随时撤回。' : '阅读说明后自主选择。未开启时，仍可查看、导出和管理已有资料。'}</p></div></div>
+    <div className="privacy-heading"><span aria-hidden="true">◇</span><div><h2 id="privacy-dialog-title">{value.accepted ? '你的数据，由你决定' : '开始前，了解你的数据如何使用'}</h2><p>{value.accepted ? '已允许当前空间使用下列模型服务，可随时撤回。' : '阅读说明后自主选择。未开启时，仍可查看、导出和管理已有资料。'}</p></div></div>
     <div className="privacy-destinations"><span>文字分析：{value.destinations.text.model || '未配置'} · {value.destinations.text.host}</span><span>截图识别：{value.destinations.vision.model || '未配置'} · {value.destinations.vision.host}</span></div>
     <details open={!value.accepted}><summary>处理范围与数据保留</summary><ul>{value.disclosures.map(line => <li key={line}>{line}</li>)}</ul><p>{value.retention_note}</p></details>
     {!compact && <label className="privacy-retention">咨询与导入聊天保留<select value={days} disabled={busy} onChange={event => { setDays(Number(event.target.value) as PrivacyStatus['history_days']); setSaved(false) }}><option value={30}>30 天</option><option value={90}>90 天</option><option value={180}>180 天</option></select><small>缩短后，超过期限的内容会在后台清理；修改前可先导出。已确认偏好和重要事项由你手动删除。</small></label>}
