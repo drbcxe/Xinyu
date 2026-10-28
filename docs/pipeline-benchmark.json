@@ -1,0 +1,248 @@
+{
+  "synthetic_corpus": {
+    "owners": 12,
+    "documents": 96,
+    "embedding_dimensions": 512,
+    "embedding_model": "BAAI/bge-small-zh-v1.5"
+  },
+  "consent_gate": {
+    "status": 403,
+    "model_calls": 0
+  },
+  "rate_window_waits": [
+    {
+      "mode": "retry503",
+      "code": "AUTH_RATE_LIMIT",
+      "wait_seconds": 37
+    }
+  ],
+  "burst_worker_initially_stopped": {
+    "requests": 16,
+    "admission": {
+      "samples": 16,
+      "p50_ms": 181.633,
+      "p95_ms": 335.884,
+      "max_ms": 335.884
+    },
+    "polling": {
+      "samples": 297,
+      "p50_ms": 9.383,
+      "p95_ms": 39.317,
+      "max_ms": 126.188
+    },
+    "http_status": {
+      "202": 8,
+      "429": 8
+    },
+    "rejections": {
+      "QUEUE_FULL": 8
+    },
+    "terminal": {
+      "succeeded": 8,
+      "not_admitted": 8
+    },
+    "successful_end_to_end": {
+      "samples": 8,
+      "p50_ms": 8175.385,
+      "p95_ms": 11209.717,
+      "max_ms": 11209.717
+    }
+  },
+  "steady_concurrent_4": {
+    "requests": 24,
+    "admission": {
+      "samples": 24,
+      "p50_ms": 48.57,
+      "p95_ms": 133.573,
+      "max_ms": 166.152
+    },
+    "polling": {
+      "samples": 214,
+      "p50_ms": 8.237,
+      "p95_ms": 29.845,
+      "max_ms": 39.498
+    },
+    "http_status": {
+      "202": 12,
+      "429": 12
+    },
+    "rejections": {
+      "AUTH_RATE_LIMIT": 12
+    },
+    "terminal": {
+      "succeeded": 12,
+      "not_admitted": 12
+    },
+    "successful_end_to_end": {
+      "samples": 12,
+      "p50_ms": 4005.497,
+      "p95_ms": 4110.792,
+      "max_ms": 4110.792
+    }
+  },
+  "cross_owner_access": {
+    "job_http": 404,
+    "source_http": 404
+  },
+  "idempotent_replay": {
+    "same_job": true,
+    "extra_model_calls": 0
+  },
+  "protocol_faults": [
+    {
+      "mode": "retry503",
+      "summary": {
+        "requests": 1,
+        "admission": {
+          "samples": 1,
+          "p50_ms": 67.574,
+          "p95_ms": 67.574,
+          "max_ms": 67.574
+        },
+        "polling": {
+          "samples": 20,
+          "p50_ms": 8.367,
+          "p95_ms": 26.482,
+          "max_ms": 28.199
+        },
+        "http_status": {
+          "202": 1
+        },
+        "rejections": {},
+        "terminal": {
+          "succeeded": 1
+        },
+        "successful_end_to_end": {
+          "samples": 1,
+          "p50_ms": 4099.327,
+          "p95_ms": 4099.327,
+          "max_ms": 4099.327
+        }
+      },
+      "worker_attempts": 1
+    },
+    {
+      "mode": "deny401",
+      "summary": {
+        "requests": 1,
+        "admission": {
+          "samples": 1,
+          "p50_ms": 43.529,
+          "p95_ms": 43.529,
+          "max_ms": 43.529
+        },
+        "polling": {
+          "samples": 11,
+          "p50_ms": 8.282,
+          "p95_ms": 11.937,
+          "max_ms": 11.937
+        },
+        "http_status": {
+          "202": 1
+        },
+        "rejections": {},
+        "terminal": {
+          "failed": 1
+        },
+        "successful_end_to_end": null
+      },
+      "worker_attempts": 1
+    },
+    {
+      "mode": "malformed",
+      "summary": {
+        "requests": 1,
+        "admission": {
+          "samples": 1,
+          "p50_ms": 45.798,
+          "p95_ms": 45.798,
+          "max_ms": 45.798
+        },
+        "polling": {
+          "samples": 12,
+          "p50_ms": 7.818,
+          "p95_ms": 12.401,
+          "max_ms": 12.401
+        },
+        "http_status": {
+          "202": 1
+        },
+        "rejections": {},
+        "terminal": {
+          "failed": 1
+        },
+        "successful_end_to_end": null
+      },
+      "worker_attempts": 1
+    }
+  ],
+  "cancel_in_flight": {
+    "cancelled": true,
+    "late_turns": 0
+  },
+  "worker_interrupted": {
+    "status": "succeeded",
+    "attempts": 2,
+    "elapsed_ms": 21584.943
+  },
+  "model_ledger": {
+    "uncertain": 2,
+    "rejected": 1,
+    "completed": 94,
+    "reserved": 1
+  },
+  "turns": 22,
+  "postgres_version": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "remaining_provider_slots": 1,
+  "storage": {
+    "used_bytes": 10703398,
+    "reserved_bytes": 0,
+    "limit_bytes": 536870912,
+    "by_category": {
+      "graph": 10123971,
+      "conversations": 397274,
+      "items": 79288,
+      "metadata": 86075,
+      "jobs": 16790
+    }
+  },
+  "resource_observations": {
+    "samples": 704,
+    "sampled_api_worker_peak_rss_mib": 628.09,
+    "max_queued": 8,
+    "max_running": 2,
+    "max_provider_slots": 2,
+    "sampling_interval_ms": 100
+  },
+  "synthetic_model": {
+    "calls": {
+      "rerank": 47,
+      "tool": 29,
+      "answer": 22,
+      "http_503": 1,
+      "http_401": 1
+    },
+    "peak_concurrent": 2
+  },
+  "data_origin": "synthetic",
+  "model_protocol": "local deterministic OpenAI-compatible peer; no paid model calls",
+  "python": "3.12.15",
+  "os": "Windows 11",
+  "logical_cpus": 24,
+  "memory_gib": 15.74,
+  "source_code_sha256": "0ebbe12565d3494f7accfcbfa08afee1ca99be4760d065933ef8ee438d7f4314",
+  "git_revision": "700eb74f1b420604e0b0a8439cfff1f7dbc011fc",
+  "git_worktree_dirty": true,
+  "recorded_at": "2026-10-28T04:20:08.225378+00:00",
+  "benchmark_sha256": "0ed96c54862e5c9e05116b5426b44d3737a33a1bb182b285470dfed695ddf6d9",
+  "note": "Small local workload, not a production SLA. API/Worker RSS excludes DB/Qdrant, preparation process and OS cache; 100 ms sampling may miss peaks. Worker interruption uses a 15-second lease rather than production default 90 seconds.",
+  "limits": {
+    "global_queue_limit": 8,
+    "worker_advice_concurrency": 2,
+    "global_model_concurrency": 4,
+    "worker_lease_seconds": 15,
+    "agent_timeout_seconds": 60
+  },
+  "resources_cleaned": true,
+  "private_runtime_cleaned": true
+}

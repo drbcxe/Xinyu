@@ -1,6 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -13,6 +24,25 @@ class RelationshipProfile(Base):
     style: Mapped[str] = mapped_column(
         String(500), default="自然、简短，不要油腻或说教"
     )
+
+
+class RelationshipPrivacy(Base):
+    __tablename__ = "relationship_privacy"
+    __table_args__ = (
+        CheckConstraint(
+            "history_days IN (30, 90, 180)", name="ck_privacy_history_days"
+        ),
+    )
+    owner: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[str] = mapped_column(String(40), default="")
+    provider_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    history_days: Mapped[int] = mapped_column(Integer, default=90)
 
 
 class RelationshipTurn(Base):
@@ -49,6 +79,10 @@ class RelationshipAccount(Base):
     owner: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    email: Mapped[str | None] = mapped_column(String(254), unique=True, nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class RelationshipSession(Base):
@@ -83,7 +117,10 @@ class RelationshipLoginLimit(Base):
 
 class RelationshipJob(Base):
     __tablename__ = "relationship_jobs"
-    __table_args__ = (UniqueConstraint("owner", "request_id"),)
+    __table_args__ = (
+        UniqueConstraint("owner", "request_id"),
+        Index("ix_relationship_jobs_dispatch", "status", "available_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     owner: Mapped[str] = mapped_column(String(64), index=True)
     request_id: Mapped[str] = mapped_column(String(36))
@@ -92,8 +129,22 @@ class RelationshipJob(Base):
     turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     error: Mapped[str] = mapped_column(Text, default="")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    capacity_deferrals: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    capacity_wait_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    cancel_requested: Mapped[bool] = mapped_column(default=False)
 
 
 class RelationshipNotice(Base):
@@ -133,6 +184,139 @@ class RelationshipRagIndex(Base):
     status: Mapped[str] = mapped_column(String(20), index=True)
     signature: Mapped[str] = mapped_column(String(64), default="")
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_points: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0"
+    )
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(String(300), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipDailyUsage(Base):
+    __tablename__ = "relationship_daily_usage"
+    scope: Mapped[str] = mapped_column(String(80), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    charged_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class RelationshipModelCall(Base):
+    __tablename__ = "relationship_model_calls"
+    __table_args__ = (
+        Index("ix_relationship_model_calls_pending", "status", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    operation_id: Mapped[str] = mapped_column(String(80), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(150))
+    day: Mapped[str] = mapped_column(String(10))
+    reserved_tokens: Mapped[int] = mapped_column(Integer)
+    charged_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20))
+    usage_reported: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RelationshipEmailChallenge(Base):
+    __tablename__ = "relationship_email_challenges"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    binding: Mapped[str] = mapped_column(String(64))
+    purpose: Mapped[str] = mapped_column(String(20))
+    email: Mapped[str] = mapped_column(String(254))
+    answer_hash: Mapped[str] = mapped_column(String(64))
+    password_version: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RelationshipEmailOutbox(Base):
+    __tablename__ = "relationship_email_outbox"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    encrypted_payload: Mapped[str] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipClosedSpace(Base):
+    __tablename__ = "relationship_closed_spaces"
+    owner: Mapped[str] = mapped_column(String(64), primary_key=True)
+    receipt_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    cleanup_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RelationshipFeedback(Base):
+    __tablename__ = "relationship_feedback"
+    __table_args__ = (UniqueConstraint("owner", "turn_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    turn_id: Mapped[str] = mapped_column(String(36))
+    rating: Mapped[str] = mapped_column(String(20))
+    category: Mapped[str] = mapped_column(String(30))
+    comment: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RelationshipStoragePolicy(Base):
+    __tablename__ = "relationship_storage_policy"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_bytes: Mapped[int] = mapped_column(BigInteger)
+    global_bytes: Mapped[int] = mapped_column(BigInteger)
+    graph_thread_bytes: Mapped[int] = mapped_column(BigInteger)
+    job_reserve_bytes: Mapped[int] = mapped_column(BigInteger)
+    profile_limit: Mapped[int] = mapped_column(Integer)
+    emergency_bytes: Mapped[int] = mapped_column(BigInteger)
+    owner_vector_points: Mapped[int] = mapped_column(BigInteger, server_default="50000")
+    global_vector_points: Mapped[int] = mapped_column(
+        BigInteger, server_default="250000"
+    )
+    vector_untracked_points: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    vector_observed_points: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    vector_audited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    vector_scope: Mapped[str] = mapped_column(String(100), server_default="")
+
+
+class RelationshipStorageTotal(Base):
+    __tablename__ = "relationship_storage_totals"
+    scope: Mapped[str] = mapped_column(String(80), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), primary_key=True)
+    bytes: Mapped[int] = mapped_column(BigInteger)
+
+
+class RelationshipStorageReservation(Base):
+    __tablename__ = "relationship_storage_reservations"
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    remaining: Mapped[int] = mapped_column(BigInteger)
+
+
+class RelationshipStorageThread(Base):
+    __tablename__ = "relationship_storage_threads"
+    thread_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    bytes: Mapped[int] = mapped_column(BigInteger)

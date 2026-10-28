@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,7 @@ from app.errors import AppError
 from app.models.relationship import (
     RelationshipAccount,
     RelationshipAuthEvent,
+    RelationshipClosedSpace,
     RelationshipSession,
 )
 from app.repositories.database import get_db
@@ -36,6 +38,7 @@ from app.services.auth_cache import (
     record_failure,
     verify_captcha,
 )
+from app.services.storage_budget import lock_storage
 
 DB = Annotated[Session, Depends(get_db)]
 COOKIE = "relationship_session"
@@ -121,7 +124,7 @@ def owner_id(request: Request, response: Response, db: DB) -> str:
             owner = resolve_session(db, key)
             if owner:
                 return owner
-        elif not db.scalar(
+        elif not db.get(RelationshipClosedSpace, key) and not db.scalar(
             select(RelationshipAccount.username).where(RelationshipAccount.owner == key)
         ):
             return key
@@ -212,16 +215,23 @@ def device(request: Request) -> str:
 
 
 def log_event(db: Session, request: Request, owner: str | None, event: str):
-    db.add(
-        RelationshipAuthEvent(
-            id=str(uuid4()),
-            owner=owner,
-            event=event,
-            device_label=device(request),
-            ip_tag=digest(address(request))[:12],
-            created_at=datetime.now(UTC),
-        )
-    )
+    try:
+        with db.begin_nested():
+            db.add(
+                RelationshipAuthEvent(
+                    id=str(uuid4()),
+                    owner=owner,
+                    event=event,
+                    device_label=device(request),
+                    ip_tag=digest(address(request))[:12],
+                    created_at=datetime.now(UTC),
+                )
+            )
+            db.flush()
+    except AppError as exc:
+        if exc.code not in {"SPACE_QUOTA_EXCEEDED", "GLOBAL_STORAGE_QUOTA_EXCEEDED"}:
+            raise
+        logging.getLogger(__name__).warning("auth_event_omitted_storage_limit")
 
 
 def auth_rate(request: Request):
@@ -235,6 +245,8 @@ def captcha_binding(request: Request) -> str:
 
 
 def require_account(db: Session, owner: str, lock: bool = False) -> RelationshipAccount:
+    if lock:
+        lock_storage(db)
     query = select(RelationshipAccount).where(RelationshipAccount.owner == owner)
     account = db.scalar(query.with_for_update() if lock else query)
     if not account:
@@ -322,6 +334,7 @@ def captcha(request: Request, response: Response, owner: Owner):
 
 @router.get("/me")
 def me(db: DB, owner: Owner):
+    lock_storage(db)
     account = db.scalar(
         select(RelationshipAccount).where(RelationshipAccount.owner == owner)
     )
@@ -362,6 +375,7 @@ def login(payload: Login, request: Request, response: Response, db: DB, owner: O
     username = payload.username.lower()
     check_failures(username, address(request))
     verify_captcha(captcha_binding(request), payload.captcha_id, payload.captcha_code)
+    lock_storage(db)
     account = db.scalar(
         select(RelationshipAccount)
         .where(RelationshipAccount.username == username)

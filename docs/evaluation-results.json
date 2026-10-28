@@ -1,0 +1,210 @@
+{
+  "verified_source_commit": "8d1172f",
+  "verification": "app/quality Python file hash matches this commit; per-run git_revision may precede commit because source was then uncommitted",
+  "reports": [
+    {
+      "dataset_sha256": "2147222c3271632e1c9b89bdbb328b4f9da28feff3c94359caecd6b6e9a7acee",
+      "dataset_version": "xinyu-synthetic-v1",
+      "clock": "2026-10-27T12:00:00+00:00",
+      "split": "dev",
+      "mode": "live",
+      "embedding_model": "BAAI/bge-small-zh-v1.5",
+      "model": "glm-5.3-flash",
+      "judge_model": "glm-5.3-flash",
+      "git_revision": "17a1613d852273da4f2cc0b63bb46a9aefd44f01",
+      "git_dirty": true,
+      "code_sha256": "eb55f5edcd812ea079f7cbe6ec78ccedb30f4f3f6fa07f9a88c49636eab64c5a",
+      "packages": {
+        "agentevals": "0.0.9",
+        "langgraph": "1.2.17",
+        "fastembed": "0.9.1",
+        "qdrant-client": "1.17.1"
+      },
+      "token_budget": 200000,
+      "charged_tokens": 122211,
+      "uncertain_calls": 0,
+      "coverage": {
+        "requested": 30,
+        "completed": 30,
+        "not_completed": 0
+      },
+      "judge_coverage": {
+        "requested": 30,
+        "completed": 30
+      },
+      "retrieval_evaluated_cases": 8,
+      "summary": {
+        "completion_rate": 1.0,
+        "end_to_end_rule_pass_rate": 1.0,
+        "rule_pass_rate": 1,
+        "trajectory_pass_rate": 1
+      },
+      "retrieval_summary": {
+        "bm25": {
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.5,
+          "mrr": 0.5,
+          "ndcg_at_k": 0.5
+        },
+        "hybrid": {
+          "recall_at_k": 0.75,
+          "precision_at_k": 0.5,
+          "mrr": 0.6875,
+          "ndcg_at_k": 0.7038662191964322
+        }
+      },
+      "judge_summary": {
+        "understanding": 1.8666666666666667,
+        "groundedness": 1.9,
+        "respectful_communication": 2,
+        "actionable_without_overclaiming": 1.9333333333333333
+      },
+      "category_slices": {
+        "boundaries": {
+          "cases": 3,
+          "completed": 3
+        },
+        "communication": {
+          "cases": 3,
+          "completed": 3
+        },
+        "confirmation": {
+          "cases": 3,
+          "completed": 3
+        },
+        "conflict": {
+          "cases": 3,
+          "completed": 3
+        },
+        "dates": {
+          "cases": 3,
+          "completed": 3
+        },
+        "memory_updates": {
+          "cases": 3,
+          "completed": 3
+        },
+        "multi_turn": {
+          "cases": 3,
+          "completed": 3
+        },
+        "reminders": {
+          "cases": 3,
+          "completed": 3
+        },
+        "retrieval": {
+          "cases": 3,
+          "completed": 3
+        },
+        "security": {
+          "cases": 3,
+          "completed": 3
+        }
+      },
+      "resource_cleanup_completed": true,
+      "note": "Synthetic domain evaluation; not an official AgentEvals or LongMemEval benchmark score. Same-model judge ratings are advisory. Incomplete coverage is never a full pass."
+    },
+    {
+      "dataset_sha256": "2147222c3271632e1c9b89bdbb328b4f9da28feff3c94359caecd6b6e9a7acee",
+      "dataset_version": "xinyu-synthetic-v1",
+      "clock": "2026-10-27T12:00:00+00:00",
+      "split": "holdout",
+      "mode": "live",
+      "embedding_model": "BAAI/bge-small-zh-v1.5",
+      "model": "glm-5.3-flash",
+      "judge_model": "glm-5.3-flash",
+      "git_revision": "8d1172fe21bae0fadee57bac9b2e0ba7acf04689",
+      "git_dirty": false,
+      "code_sha256": "eb55f5edcd812ea079f7cbe6ec78ccedb30f4f3f6fa07f9a88c49636eab64c5a",
+      "packages": {
+        "agentevals": "0.0.9",
+        "langgraph": "1.2.17",
+        "fastembed": "0.9.1",
+        "qdrant-client": "1.17.1"
+      },
+      "token_budget": 200000,
+      "charged_tokens": 64852,
+      "uncertain_calls": 0,
+      "coverage": {
+        "requested": 20,
+        "completed": 20,
+        "not_completed": 0
+      },
+      "judge_coverage": {
+        "requested": 20,
+        "completed": 20
+      },
+      "retrieval_evaluated_cases": 5,
+      "summary": {
+        "completion_rate": 1.0,
+        "end_to_end_rule_pass_rate": 1.0,
+        "rule_pass_rate": 1,
+        "trajectory_pass_rate": 1
+      },
+      "retrieval_summary": {
+        "bm25": {
+          "recall_at_k": 0.4,
+          "precision_at_k": 0.3,
+          "mrr": 0.3,
+          "ndcg_at_k": 0.3261859507142915
+        },
+        "hybrid": {
+          "recall_at_k": 0.4,
+          "precision_at_k": 0.16666666666666666,
+          "mrr": 0.4,
+          "ndcg_at_k": 0.4
+        }
+      },
+      "judge_summary": {
+        "understanding": 1.9,
+        "groundedness": 1.7,
+        "respectful_communication": 2,
+        "actionable_without_overclaiming": 1.9
+      },
+      "category_slices": {
+        "boundaries": {
+          "cases": 2,
+          "completed": 2
+        },
+        "communication": {
+          "cases": 2,
+          "completed": 2
+        },
+        "confirmation": {
+          "cases": 2,
+          "completed": 2
+        },
+        "conflict": {
+          "cases": 2,
+          "completed": 2
+        },
+        "dates": {
+          "cases": 2,
+          "completed": 2
+        },
+        "memory_updates": {
+          "cases": 2,
+          "completed": 2
+        },
+        "multi_turn": {
+          "cases": 2,
+          "completed": 2
+        },
+        "reminders": {
+          "cases": 2,
+          "completed": 2
+        },
+        "retrieval": {
+          "cases": 2,
+          "completed": 2
+        },
+        "security": {
+          "cases": 2,
+          "completed": 2
+        }
+      },
+      "resource_cleanup_completed": true,
+      "note": "Synthetic domain evaluation; not an official AgentEvals or LongMemEval benchmark score. Same-model judge ratings are advisory. Incomplete coverage is never a full pass."
+    }
+  ]
+}

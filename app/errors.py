@@ -20,9 +20,56 @@ class AppError(Exception):
         self.details = details if details is not None else []
 
 
+STORAGE_ERROR_CODES = {
+    "XY001": (
+        413,
+        "SPACE_QUOTA_EXCEEDED",
+        "当前空间容量不足，请删除不需要的记录后重试",
+    ),
+    "XY002": (503, "GLOBAL_STORAGE_QUOTA_EXCEEDED", "服务存储预算已满，请稍后重试"),
+    "XY003": (
+        413,
+        "GRAPH_STORAGE_LIMIT",
+        "本次执行的临时状态超过容量限制，请缩小问题范围",
+    ),
+    "XY004": (
+        503,
+        "STORAGE_POLICY_MISSING",
+        "存储预算尚未初始化，请先升级并准备数据库",
+    ),
+    "XY005": (503, "SPACE_COUNT_LIMIT", "服务空间数量已达上限，请稍后重试"),
+    "XY006": (
+        413,
+        "VECTOR_QUOTA_EXCEEDED",
+        "语义索引容量不足，请删除不需要的资料后重试；原文仍可用关键词检索",
+    ),
+    "XY007": (
+        503,
+        "GLOBAL_VECTOR_QUOTA_EXCEEDED",
+        "服务语义索引预算已满，请稍后手动重试；原文仍可用关键词检索",
+    ),
+    "XY008": (
+        503,
+        "VECTOR_AUDIT_REQUIRED",
+        "语义索引容量尚未核对或存在未归属数据，请联系管理员；原文仍可用关键词检索",
+    ),
+    "XY009": (503, "VECTOR_RESERVATION_INVALID", "语义索引容量记录无效，请联系管理员"),
+}
+
+
+def storage_error(exc):
+    state = getattr(exc, "sqlstate", None) or getattr(
+        getattr(exc, "orig", None), "sqlstate", None
+    )
+    if state in STORAGE_ERROR_CODES:
+        status, code, message = STORAGE_ERROR_CODES[state]
+        return AppError(status, code, message)
+    return None
+
+
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     headers = {}
-    if exc.status_code == 429 and isinstance(exc.details, dict):
+    if exc.status_code in {429, 503} and isinstance(exc.details, dict):
         retry = exc.details.get("retry_after_seconds")
         if isinstance(retry, int):
             headers["Retry-After"] = str(max(retry, 1))
@@ -31,7 +78,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         headers=headers,
         content={
             "error": {"code": exc.code, "message": exc.message, "details": exc.details},
-            "request_id": uuid4().hex,
+            "request_id": getattr(request.state, "request_id", None) or uuid4().hex,
         },
     )
 
@@ -56,6 +103,6 @@ async def validation_error_handler(
                 "message": "请求参数不符合要求",
                 "details": details,
             },
-            "request_id": uuid4().hex,
+            "request_id": getattr(request.state, "request_id", None) or uuid4().hex,
         },
     )

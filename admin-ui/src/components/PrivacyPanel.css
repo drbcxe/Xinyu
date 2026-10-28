@@ -1,0 +1,39 @@
+.privacy-panel { padding: 24px; margin: 0 0 24px; border: 1px solid #e5deed; border-radius: 22px; background: #faf8fd; color: #51445f; }
+.privacy-heading { display: flex; gap: 12px; align-items: flex-start; }
+.privacy-heading > span { font-size: 28px; color: #82629f; }
+.privacy-panel h2 { font-size: 18px; margin: 0 0 8px; letter-spacing: -.3px; }
+.privacy-panel p, .privacy-panel li { font-size: 13px; line-height: 1.8; }
+.privacy-panel p { margin: 0 0 12px; }
+.privacy-destinations { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 0; font-size: 12px; overflow-wrap: anywhere; }
+.privacy-panel details { margin: 4px 0 16px; font-size: 13px; }
+.privacy-panel summary { cursor: pointer; font-weight: 600; }
+.privacy-panel ul { padding-left: 22px; }
+.privacy-panel li { margin-bottom: 8px; }
+.privacy-choice { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.7; margin: 16px 0; }
+.privacy-choice input { width: 17px; height: 17px; flex-shrink: 0; margin-top: 3px; accent-color: #82629f; }
+.privacy-retention { display: grid; gap: 10px; max-width: 540px; margin: 18px 0; font-size: 13px; }
+.privacy-retention select { border: 1px solid #ded4e9; border-radius: 10px; background: white; padding: 10px 12px; color: inherit; }
+.privacy-retention small { line-height: 1.7; color: #897b96; }
+.privacy-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.privacy-actions button { padding: 10px 16px; border-radius: 11px; border: 1px solid #ded4e9; cursor: pointer; background: white; color: #705485; font: inherit; font-size: 13px; }
+.privacy-actions .love-primary { background: #80629c; color: white; }
+.privacy-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.privacy-panel .privacy-error { margin-top: 12px; color: #a34639; }
+@media (max-width: 600px) { .privacy-panel { padding: 18px; border-radius: 16px; } .privacy-actions button { width: 100%; } }
+
+.love-settings > .privacy-panel { grid-column: 1 / -1; margin: 0; }
+.privacy-panel .privacy-choice { display: flex; }
+.privacy-panel .privacy-choice input { width: 17px; height: 17px; padding: 0; margin: 3px 0 0; }
+
+.privacy-dialog { width: min(760px, calc(100vw - 32px)); max-height: 88vh; max-height: 88dvh; padding: 0; margin: auto; border: 1px solid #e5deed; border-radius: 24px; background: #fff; color: #51445f; box-shadow: 0 24px 100px #2116333b; overflow: hidden; }
+.privacy-dialog::backdrop { background: #20182f66; backdrop-filter: blur(6px); }
+.privacy-dialog[open] { display: flex; flex-direction: column; }
+.privacy-dialog-scroll { min-height: 0; max-height: calc(88vh - 76px); max-height: calc(88dvh - 76px); overflow-y: auto; overscroll-behavior: contain; }
+.privacy-dialog .privacy-panel { margin: 0; padding: 30px 32px 18px; border: 0; border-radius: 0; background: linear-gradient(180deg, #faf8ff, #fff 260px); }
+.privacy-dialog .privacy-heading { padding-right: 34px; }
+.love-app .privacy-dialog-close { position: absolute; z-index: 1; top: 16px; right: 16px; width: 32px; height: 32px; padding: 0; border-radius: 50%; background: #fff; color: #81708e; font-size: 23px; line-height: 1; }
+.privacy-dialog-footer { padding: 14px 24px; display: flex; justify-content: flex-end; flex-shrink: 0; border-top: 1px solid #efebf4; background: #fff; }
+.privacy-dialog-footer button { font-size: 12px; }
+.love-top-actions .privacy-entry { font-size: 11px; padding: 7px 10px; white-space: nowrap; }
+@media (max-width: 600px) { .privacy-dialog { width: calc(100vw - 20px); border-radius: 18px; max-height: 90dvh; }.privacy-dialog-scroll { max-height: calc(90dvh - 76px); }.privacy-dialog .privacy-panel { padding: 24px 20px 12px; }.privacy-dialog .privacy-heading { padding-right: 26px; }.privacy-dialog-footer { padding: 14px 20px; }.privacy-dialog-footer button { width: 100%; }.privacy-entry svg { display: none; } }
+@media (max-width: 400px) { .love-top > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }.love-top-actions { flex-shrink: 0; } }

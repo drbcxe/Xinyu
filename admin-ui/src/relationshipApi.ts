@@ -7,17 +7,20 @@ export type GraphStep = { node: string; milliseconds: number; mode?: string; sou
 export type Advice = { transcript?: string; analysis: string; uncertainty: string; replies: string[]; candidates: Candidate[]; date_plans?: Plan[]; tool_trace?: Trace[]; sources?: RagSource[]; retrieved_sources?: RagSource[]; graph_trace?: GraphStep[]; retrieval_trace?: Retrieval[]; execution?: { engine: string; checkpointed: boolean; resumed: boolean; model_steps: number; tool_calls: number; usage: Record<string, number> } }
 export type Turn = { id: string; content: string; result: Advice; created_at: string }
 export type Item = { id: string; kind: 'memory' | 'reminder' | 'date_plan' | 'chat_log'; title: string; quote: string; source_turn_id: string | null; due_at: string | null; status: 'active' | 'completed' | 'cancelled'; revision: number; details: Partial<Plan> & { text?: string } }
-export type Job = { id: string; status: 'queued' | 'running' | 'succeeded' | 'failed'; error: string; turn_id: string | null; created_at: string }
+export type Job = { id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; error: string; turn_id: string | null; created_at: string; attempts: number; capacity_deferrals: number; capacity_wait_started_at: string | null; cancel_requested: boolean; available_at: string; progress?: { node: string; model_step: number } | null }
 export type Notice = { id: string; title: string; status: string; weixin_status: string; error: string; created_at: string }
 export type Profile = { partner_name: string; style: string }
-export type State = { profile: Profile; turns: Turn[]; items: Item[]; jobs: Job[]; notices: Notice[]; supports_images: boolean; server_time: string; worker_online: boolean; account: { username: string | null }; weixin: { status: string; interface_ready: boolean } }
+export type PrivacyStatus = { version: string; provider_fingerprint: string; accepted: boolean; accepted_at: string | null; revoked_at: string | null; history_days: 30 | 90 | 180; destinations: Record<'text' | 'vision', { host: string; model: string }>; disclosures: string[]; retention_note: string }
+export type State = { version: string; history_has_more: boolean; item_counts: Record<string, number>; profile: Profile; turns: Turn[]; jobs: Job[]; notices: Notice[]; supports_images: boolean; server_time: string; worker_online: boolean; account: { username: string | null }; weixin: { status: string; interface_ready: boolean }; privacy: PrivacyStatus }
 
 export class ApiError extends Error {
   code: string
   details: Record<string, unknown>
-  constructor(message: string, code: string, details: unknown) {
+  requestId?: string
+  constructor(message: string, code: string, details: unknown, requestId?: string) {
     super(message)
     this.name = 'ApiError'; this.code = code
+    this.requestId = requestId
     this.details = details && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : {}
   }
 }
@@ -30,7 +33,11 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     body: body ? form ? body : JSON.stringify(body) : undefined,
   })
   const data = await response.json().catch(() => null)
-  if (!response.ok) throw new ApiError(data?.error?.message ?? '请求失败，请检查后端连接', data?.error?.code ?? 'REQUEST_FAILED', data?.error?.details)
+  if (!response.ok) {
+    const requestId = response.headers.get('X-Request-ID') ?? data?.request_id
+    const message = data?.error?.message ?? '请求失败，请检查后端连接'
+    throw new ApiError(response.status >= 500 && requestId ? `${message}（请求编号：${requestId}）` : message, data?.error?.code ?? 'REQUEST_FAILED', data?.error?.details, requestId)
+  }
   if (!data) throw new Error('接口未返回 JSON，请检查 /api 代理')
   return data as T
 }
