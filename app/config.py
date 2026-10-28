@@ -70,9 +70,21 @@ class Settings(BaseSettings):
     database_connect_timeout: int = Field(default=5, ge=1, le=30)
     database_statement_timeout_ms: int = Field(default=30000, ge=1000, le=120000)
     backup_key_file: str = ""
+    log_file_bytes: PositiveInt = 4 * 1024 * 1024
+    log_backup_count: int = Field(default=2, ge=1, le=10)
+    log_total_bytes: PositiveInt = 128 * 1024 * 1024
+    log_retention_days: int = Field(default=7, ge=1, le=90)
+    backup_total_bytes: PositiveInt = 8 * 1024**3
+    backup_max_count: int = Field(default=128, ge=3, le=1000)
+    backup_retention_days: int = Field(default=7, ge=1, le=365)
+    backup_keep_count: int = Field(default=3, ge=1, le=100)
+    restore_temp_bytes: PositiveInt = 4 * 1024**3
+    runtime_free_bytes: PositiveInt = 2 * 1024**3
 
     @model_validator(mode="after")
     def storage_reserve_covers_execution(self):
+        if self.backup_keep_count > self.backup_max_count:
+            raise ValueError("BACKUP_KEEP_COUNT must not exceed BACKUP_MAX_COUNT")
         if (
             self.job_storage_reserve_bytes
             < self.graph_thread_storage_bytes + self.agent_result_bytes + 131072

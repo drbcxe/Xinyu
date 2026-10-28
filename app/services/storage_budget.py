@@ -93,9 +93,14 @@ def capacity_status():
     import shutil
 
     from app.config import PROJECT_ROOT
+    from app.services.physical_storage import runtime_file_status
     from app.services.vector_capacity import vector_summary
 
     result = global_storage_summary()
+    try:
+        result["runtime_files"] = runtime_file_status()
+    except (OSError, RuntimeError):
+        result["runtime_files"] = {"unavailable": True}
     with Session(get_engine()) as db:
         result["vectors"] = vector_summary(db)
     with get_engine().connect() as conn:

@@ -139,6 +139,25 @@ def alert_findings(readiness, queues, http, storage=None):
     if queues.get("indexes", {}).get("quota_blocked", 0):
         findings.append("VECTOR_INDEX_BLOCKED")
     vectors = (storage or {}).get("vectors", {})
+    runtime = (storage or {}).get("runtime_files", {})
+    if runtime.get("unavailable"):
+        findings.append("RUNTIME_STORAGE_UNAVAILABLE")
+    for name, code in [
+        ("logs", "LOG_STORAGE_HIGH"),
+        ("backups", "BACKUP_STORAGE_HIGH"),
+        ("restore_temp", "RESTORE_TEMP_HIGH"),
+    ]:
+        values = runtime.get(name, {})
+        if (
+            values
+            and values.get("file_bytes", values.get("managed_bytes", 0))
+            >= values["limit_bytes"] * 0.9
+        ):
+            findings.append(code)
+    if runtime.get("logs", {}).get("dropped_in_calling_process", 0):
+        findings.append("LOG_EVENTS_DROPPED")
+    if runtime.get("backups", {}).get("incomplete", 0):
+        findings.append("INCOMPLETE_BACKUP")
     if vectors.get("untracked_points", 0):
         findings.append("UNATTRIBUTED_VECTORS")
     if vectors and not vectors.get("audited_at"):

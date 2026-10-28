@@ -320,7 +320,11 @@ def test_actual_postgres_and_qdrant_backup_restore_and_post_backup_deletion(
             for c in vector.get_collections().collections
             if c.name.startswith("xinyu_restore_")
         ]
-        assert not list((root / ".runtime" / "restore-tmp").iterdir())
+        leftovers = list((root / ".runtime" / "restore-tmp").iterdir())
+        assert all(
+            path.name == ".restore.lock" and path.stat().st_size == 0
+            for path in leftovers
+        )
         encrypted = bytearray((folder / "database.enc").read_bytes())
         encrypted[50] ^= 1
         (folder / "database.enc").write_bytes(encrypted)

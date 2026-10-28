@@ -21,7 +21,9 @@
 
 ## 不记录聊天正文的日志
 
-API 和 Worker 分别输出 `.runtime/logs/app-api-<PID>.jsonl`、`app-worker-<PID>.jsonl`。每个进程文件 10 MiB 轮转、最多保留 3 个轮转文件。旧进程日志的时间保留策略另由数据生命周期维护处理。
+API 和 Worker 分别输出 `.runtime/logs/app-api-<PID>.jsonl`、`app-worker-<PID>.jsonl`。默认单文件 4 MiB，保留 2 个轮转文件；所有受管进程日志共享 128 MiB 上限。每次写入持跨进程文件锁检查总量；超过 7 天或需要腾出空间时，只清理已退出进程的受管日志。活跃/身份不确定的进程受到保护，无法腾出空间时丢弃新日志，不阻断业务请求。配置、测量口径与异常处理见 [运行文件容量](./runtime-file-budgets.md)。
+
+`scripts/start.ps1` 使用 supervisor 启动 API、Worker 和 Vite，子进程 stdout/stderr 按 8 KiB 读取并丢弃正文，仅按流汇总字节数到受管 JSON 日志。这样不会用固定 `.out.log/.err.log` 无限积累原始输出或异常中的私密内容；这六个文件仅保留单次 supervisor 自身失败的安全摘要。调试时可在停止托管服务后以前台命令运行指定服务，仍不要把原始控制台输出上传到仓库。
 
 所有 API 响应带 `X-Request-ID`；错误 JSON 使用同一编号。创建任务的请求日志记录服务器生成的 job ID，Worker 与模型调用日志使用同一 job ID，可据此关联请求、执行和模型记账。
 

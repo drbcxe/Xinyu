@@ -11,6 +11,7 @@ from app.services.account_email import process_email
 from app.services.data_retention import prune_online_data
 from app.services.observability import configure_logging
 from app.services.ops_status import operational_status
+from app.services.physical_storage import maintain_logs
 from app.services.relationship_jobs import dispatch_reminders, process_one
 from app.services.relationship_rag import process_index
 from app.services.resource_control import reconcile_abandoned_calls
@@ -23,7 +24,7 @@ def main():
     from app.services.relationship_weixin import deliver_notices, poll_bindings
 
     configure_logging("worker")
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger("scripts.worker")
     logger.info("worker_started")
     concurrency = get_settings().worker_advice_concurrency
     worker_id = str(uuid4())
@@ -61,6 +62,7 @@ def main():
                             reconcile_abandoned_calls,
                             reconcile_closed_spaces,
                             prune_online_data,
+                            maintain_logs,
                             audit_vectors_if_due,
                             corpus_cache.expire,
                         ):

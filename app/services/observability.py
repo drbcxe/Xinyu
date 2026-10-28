@@ -8,7 +8,6 @@ import secrets
 import time
 from contextvars import ContextVar
 from datetime import UTC, datetime
-from logging.handlers import RotatingFileHandler
 
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
@@ -16,6 +15,7 @@ from starlette.responses import JSONResponse
 from app.config import PROJECT_ROOT, get_settings
 from app.errors import AppError
 from app.services.auth_cache import auth_cache
+from app.services.physical_storage import BudgetedJsonHandler, runtime_folder
 
 EVENTS = {
     "http_request",
@@ -32,6 +32,11 @@ EVENTS = {
     "email_delivery_failed",
     "alert_changed",
     "maintenance_failed",
+    "auth_event_omitted_storage_limit",
+    "notice_deferred_storage_limit",
+    "process_started",
+    "process_output",
+    "process_exited",
 }
 request_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
@@ -62,6 +67,10 @@ class SafeJsonFormatter(logging.Formatter):
             "error_type",
             "alert_code",
             "active",
+            "role",
+            "stream",
+            "bytes",
+            "exit_code",
         ):
             value = getattr(record, key, None)
             if type(value) in {int, float, bool} or (
@@ -77,20 +86,19 @@ def configure_logging(role: str):
     root = logging.getLogger("app")
     if getattr(root, "xinyu_role", None) == role:
         return
-    folder = PROJECT_ROOT / ".runtime" / "logs"
-    folder.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(
-        folder / f"app-{role}-{os.getpid()}.jsonl",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=3,
-        encoding="utf-8",
-    )
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,40}", role):
+        raise ValueError("Invalid log role")
+    folder = runtime_folder("logs")
+    handler = BudgetedJsonHandler(folder / f"app-{role}-{os.getpid()}.jsonl")
     handler.setFormatter(SafeJsonFormatter())
+    previous = set(root.handlers)
     for name in ("app", "scripts", "uvicorn", "uvicorn.error"):
         log = logging.getLogger(name)
         log.handlers = [handler]
         log.propagate = False
         log.setLevel(logging.INFO)
+    for old in previous:
+        old.close()
     root.xinyu_role = role
     logging.getLogger("uvicorn.access").disabled = True
     for name in ("httpx", "httpcore", "sqlalchemy.engine"):

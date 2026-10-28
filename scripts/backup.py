@@ -24,6 +24,13 @@ from sqlalchemy.engine import make_url
 
 from app.config import PROJECT_ROOT, get_settings
 from app.services import recovery_journal
+from app.services.physical_storage import (
+    FileBudget,
+    FileBudgetError,
+    checked_folder,
+    is_link,
+    storage_lock,
+)
 from app.services.recovery_journal import (
     backup_key,
     checked_path,
@@ -213,19 +220,64 @@ def vector_client():
     )
 
 
+def owned_backup_directory(folder, root):
+    return (
+        BACKUP_NAME.fullmatch(folder.name)
+        and not is_link(folder)
+        and folder.resolve().parent == root.resolve()
+        and folder.is_dir()
+        and all(
+            path.is_file()
+            and not is_link(path)
+            and path.resolve().parent == folder.resolve()
+            and re.fullmatch(
+                r"(?:COMPLETE|(?:database|private-config|deletions|manifest|vector-[0-9]+)\.enc)",
+                path.name,
+            )
+            for path in folder.iterdir()
+        )
+    )
+
+
 def create_backup(root=None, collections=None):
+    root = checked_folder(root or PROJECT_ROOT / ".runtime" / "backups")
+    with storage_lock(root, ".backup.lock"):
+        settings = get_settings()
+        _prune_backups(root, settings.backup_retention_days, settings.backup_keep_count)
+        if (
+            sum(
+                1
+                for path in root.iterdir()
+                if path.is_dir() and BACKUP_NAME.fullmatch(path.name)
+            )
+            >= settings.backup_max_count
+        ):
+            raise FileBudgetError(
+                "Backup count limit reached; preserve recent recovery copies"
+            )
+        budget = FileBudget(root, settings.backup_total_bytes)
+        run_id = (
+            "xinyu_backup_"
+            + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ_")
+            + uuid4().hex[:16]
+        )
+        folder = root / run_id
+        folder.mkdir(mode=0o700)
+        try:
+            return _create_backup(folder, collections, budget)
+        except BaseException:
+            if owned_backup_directory(folder, root):
+                shutil.rmtree(
+                    folder
+                )  # Exact newly-created owned directory; recent backups are never removed here.
+            raise
+
+
+def _create_backup(folder, collections, budget):
     key = backup_key(create=True)
     journal = initialize_journal()
     container = pg_container()
-    root = checked_path(root or PROJECT_ROOT / ".runtime" / "backups")
-    root.mkdir(parents=True, exist_ok=True)
-    run_id = (
-        "xinyu_backup_"
-        + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ_")
-        + uuid4().hex[:16]
-    )
-    folder = root / run_id
-    folder.mkdir(mode=0o700)
+    run_id = folder.name
     manifest = {
         "version": 1,
         "id": run_id,
@@ -237,7 +289,11 @@ def create_backup(root=None, collections=None):
 
     def add(name, chunks):
         manifest["parts"][name] = encrypt_chunks(
-            chunks, folder / (name + ".enc"), key, (run_id + ":" + name).encode()
+            chunks,
+            folder / (name + ".enc"),
+            key,
+            (run_id + ":" + name).encode(),
+            before_write=budget.reserve,
         )
 
     with connect() as conn:
@@ -318,6 +374,9 @@ def create_backup(root=None, collections=None):
                         temporary / part,
                         key,
                         (run_id + ":" + part).encode(),
+                        before_write=FileBudget(
+                            temporary.parent, get_settings().restore_temp_bytes
+                        ).reserve,
                     )
                     target = "xinyu_restore_" + uuid4().hex[:16]
                     if client.get(f"/collections/{target}").status_code != 404:
@@ -332,18 +391,36 @@ def create_backup(root=None, collections=None):
                         delete_restore_collection(target)
             finally:
                 client.delete(path).raise_for_status()
+    encoded_manifest = json.dumps(manifest, sort_keys=True).encode()
+    if (
+        sum(part["bytes"] for part in manifest["parts"].values())
+        + len(encoded_manifest)
+        > get_settings().restore_temp_bytes
+    ):
+        raise FileBudgetError("Backup would exceed configured restore temporary space")
     encrypt_chunks(
-        [json.dumps(manifest, sort_keys=True).encode()],
+        [encoded_manifest],
         folder / "manifest.enc",
         key,
         (run_id + ":manifest").encode(),
+        before_write=budget.reserve,
     )
+    budget.reserve(len(run_id.encode("ascii")))
     (folder / "COMPLETE").write_text(run_id, encoding="ascii")
     return folder
 
 
 @contextmanager
 def private_temp():
+    root = checked_folder(PROJECT_ROOT / ".runtime" / "restore-tmp")
+    with storage_lock(root, ".restore.lock"):
+        FileBudget(root, get_settings().restore_temp_bytes)
+        with _private_temp() as temporary:
+            yield temporary
+
+
+@contextmanager
+def _private_temp():
     root = checked_path(PROJECT_ROOT / ".runtime" / "restore-tmp")
     root.mkdir(parents=True, exist_ok=True)
     temporary = tempfile.TemporaryDirectory(prefix="restore-", dir=root)
@@ -566,6 +643,12 @@ def validate_private_records(conn, keys):
 
 def drill(folder, journal=None):
     folder = checked_path(folder)
+    with storage_lock(folder.parent, ".backup.lock"):
+        return _drill(folder, journal)
+
+
+def _drill(folder, journal=None):
+    folder = checked_path(folder)
     if (
         not BACKUP_NAME.fullmatch(folder.name)
         or (folder / "COMPLETE").read_text(encoding="ascii") != folder.name
@@ -581,6 +664,9 @@ def drill(folder, journal=None):
             temporary / "manifest",
             key,
             (run_id + ":manifest").encode(),
+            before_write=FileBudget(
+                temporary.parent, get_settings().restore_temp_bytes
+            ).reserve,
         )
         manifest = json.loads((temporary / "manifest").read_bytes())
         if manifest["version"] != 1 or manifest["id"] != run_id:
@@ -595,6 +681,9 @@ def drill(folder, journal=None):
                 temporary / name,
                 key,
                 (run_id + ":" + name).encode(),
+                before_write=FileBudget(
+                    temporary.parent, get_settings().restore_temp_bytes
+                ).reserve,
             )
             if found != expected:
                 raise ValueError("Backup component fingerprint mismatch")
@@ -744,7 +833,19 @@ def delete_restore_collection(name):
             response.raise_for_status()
 
 
-def prune_backups(root=None, days=7, keep=3):
+def prune_backups(root=None, days=None, keep=None):
+    root = checked_path(root or PROJECT_ROOT / ".runtime" / "backups")
+    if not root.exists():
+        return 0
+    with storage_lock(root, ".backup.lock"):
+        return _prune_backups(
+            root,
+            get_settings().backup_retention_days if days is None else days,
+            get_settings().backup_keep_count if keep is None else keep,
+        )
+
+
+def _prune_backups(root=None, days=7, keep=3):
     if not 1 <= days <= 365 or not 1 <= keep <= 100:
         raise ValueError("Invalid backup retention")
     root = checked_path(root or PROJECT_ROOT / ".runtime" / "backups")
@@ -753,8 +854,7 @@ def prune_backups(root=None, days=7, keep=3):
     choices = []
     for path in root.iterdir():
         if (
-            path.is_dir()
-            and not path.is_symlink()
+            owned_backup_directory(path, root)
             and BACKUP_NAME.fullmatch(path.name)
             and (path / "COMPLETE").is_file()
         ):
@@ -779,8 +879,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["create", "drill", "prune"])
     parser.add_argument("folder", nargs="?")
-    parser.add_argument("--days", type=int, default=7)
-    parser.add_argument("--keep", type=int, default=3)
+    parser.add_argument("--days", type=int)
+    parser.add_argument("--keep", type=int)
     parser.add_argument("--deletion-journal")
     args = parser.parse_args()
     try:
